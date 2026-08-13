@@ -52,17 +52,6 @@ export default function MyTripsScreen() {
     }
   };
 
-  const handleTestAlarm = () => {
-    // Vibrate phone (pattern: wait 0ms, vibrate 500ms, pause 200ms, vibrate 500ms)
-    Vibration.vibrate([0, 500, 200, 500]);
-
-    Alert.alert(
-      '🔔 Next Halt Alarm',
-      `Your stop is next! Approaching ${selectedDropOffHalt}. You are 1 halt away from your destination. Please get ready to alight!`,
-      [{ text: 'Dismiss Alarm', style: 'cancel' }]
-    );
-  };
-
   const handleConductorHelp = () => {
     Alert.alert(
       '👨‍✈️ Conductor Assistance',
@@ -165,13 +154,10 @@ export default function MyTripsScreen() {
 
             {isAlarmEnabled && (
               <View style={styles.alarmActiveFooter}>
+                <Ionicons name="information-circle-outline" size={16} color="#059669" />
                 <Text style={styles.alarmHintText}>
-                  🔔 1 stop away. Phone will vibrate to alert you when reaching the halt.
+                  1 stop away. Phone will automatically vibrate when approaching your destination halt.
                 </Text>
-                <Pressable style={styles.testAlarmBtn} onPress={handleTestAlarm}>
-                  <Ionicons name="volume-high-outline" size={13} color="#059669" />
-                  <Text style={styles.testAlarmText}>Test Alarm</Text>
-                </Pressable>
               </View>
             )}
           </View>
@@ -187,7 +173,6 @@ export default function MyTripsScreen() {
           <View style={styles.timelineList}>
             {journeyHalts.map((halt, index) => {
               const isPassed = halt.status === 'passed';
-              const isUpcoming = halt.status === 'upcoming';
               const isLast = index === journeyHalts.length - 1;
 
               return (
@@ -502,31 +487,14 @@ const styles = StyleSheet.create({
     borderTopColor: '#D1FAE5',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 8,
   },
   alarmHintText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     color: '#047857',
     fontWeight: '600',
-    lineHeight: 15,
-  },
-  testAlarmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  testAlarmText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#059669',
+    lineHeight: 16,
   },
   timelineSectionCard: {
     backgroundColor: '#FFFFFF',

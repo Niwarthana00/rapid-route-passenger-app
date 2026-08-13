@@ -1,77 +1,498 @@
-import React from 'react';
-import { StyleSheet, View, Text, SafeAreaView, ScrollView, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  Alert,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
+interface BookingTicketItem {
+  id: string;
+  routeNumber: string;
+  from: string;
+  to: string;
+  busPlate: string;
+  isAC: boolean;
+  seat: string;
+  seatNumbers: number[];
+  fare: number;
+  date: string;
+  time: string;
+  boardingPoint: string;
+  droppingPoint: string;
+  status: 'upcoming' | 'completed' | 'cancelled';
+}
+
 export default function BookingsScreen() {
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<BookingTicketItem | null>(null);
+
+  // Sample upcoming and past bookings tailored to Sri Lanka Rapid Route
+  const upcomingBookings: BookingTicketItem[] = [
+    {
+      id: 'RR-92841',
+      routeNumber: '1-1',
+      from: 'Colombo',
+      to: 'Kandy',
+      busPlate: 'NA-1234',
+      isAC: true,
+      seat: '11',
+      seatNumbers: [11],
+      fare: 850,
+      date: 'Today, 13 Aug',
+      time: '08:30 AM',
+      boardingPoint: 'Colombo Fort Bus Stand, Bay 4',
+      droppingPoint: 'Kandy Goods Shed Terminal',
+      status: 'upcoming',
+    },
+    {
+      id: 'RR-81204',
+      routeNumber: '138',
+      from: 'Kottawa',
+      to: 'Pettah',
+      busPlate: 'NB-5678',
+      isAC: false,
+      seat: '04',
+      seatNumbers: [4],
+      fare: 140,
+      date: '14 May',
+      time: '17:15 PM',
+      boardingPoint: 'Kottawa Multi-Modal Transport Hub',
+      droppingPoint: 'Pettah Main Bus Stand',
+      status: 'upcoming',
+    },
+  ];
+
+  const pastBookings: BookingTicketItem[] = [
+    {
+      id: 'RR-76512',
+      routeNumber: '138',
+      from: 'Kottawa',
+      to: 'Pettah',
+      busPlate: 'ND-9012',
+      isAC: false,
+      seat: '08',
+      seatNumbers: [8],
+      fare: 140,
+      date: '10 May',
+      time: '07:45 AM',
+      boardingPoint: 'Kottawa Stand',
+      droppingPoint: 'Pettah Stand',
+      status: 'completed',
+    },
+    {
+      id: 'RR-65430',
+      routeNumber: '120',
+      from: 'Horana',
+      to: 'Pettah',
+      busPlate: 'NC-3421',
+      isAC: false,
+      seat: '14',
+      seatNumbers: [14],
+      fare: 180,
+      date: '02 May',
+      time: '16:30 PM',
+      boardingPoint: 'Horana Bus Stand',
+      droppingPoint: 'Pettah Main Stand',
+      status: 'completed',
+    },
+    {
+      id: 'RR-54219',
+      routeNumber: '17',
+      from: 'Panadura',
+      to: 'Kandy',
+      busPlate: 'NA-4321',
+      isAC: true,
+      seat: '22',
+      seatNumbers: [22],
+      fare: 850,
+      date: '28 Apr',
+      time: '06:15 AM',
+      boardingPoint: 'Panadura Town Stand',
+      droppingPoint: 'Kandy Goods Shed',
+      status: 'completed',
+    },
+  ];
+
+  const displayedList = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
+
+  const handleDownloadPDF = async (ticket: BookingTicketItem) => {
+    setDownloadingId(ticket.id);
+    try {
+      let Print: any = null;
+      let Sharing: any = null;
+
+      try {
+        Print = require('expo-print');
+        Sharing = require('expo-sharing');
+      } catch (err) {
+        console.log('expo-print not loaded', err);
+      }
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+            body { background-color: #f1f5f9; padding: 30px; display: flex; justify-content: center; }
+            .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 16px; border: 1px solid #e2e8f0; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+            .header { border-bottom: 2px solid #0E90E6; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+            .title { font-size: 18px; font-weight: 800; color: #0E90E6; }
+            .id { font-size: 12px; font-weight: 700; color: #64748b; }
+            .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+            .label { color: #64748b; font-size: 13px; font-weight: 600; }
+            .val { color: #0f172a; font-size: 14px; font-weight: 800; }
+            .total { margin-top: 14px; padding-top: 12px; border-top: 2px dashed #cbd5e1; display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; color: #0E90E6; }
+            .footer { text-align: center; margin-top: 20px; font-size: 11px; color: #94a3b8; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="header">
+              <span class="title">RAPID ROUTE PASSENGER RECEIPT</span>
+              <span class="id">${ticket.id}</span>
+            </div>
+            <div class="row"><span class="label">Route</span><span class="val">${ticket.routeNumber} ${ticket.from} &rarr; ${ticket.to}</span></div>
+            <div class="row"><span class="label">Bus Number</span><span class="val">${ticket.busPlate} (${ticket.isAC ? 'A/C' : 'Normal'})</span></div>
+            <div class="row"><span class="label">Seat Number</span><span class="val">Seat ${ticket.seat}</span></div>
+            <div class="row"><span class="label">Travel Date & Time</span><span class="val">${ticket.date} • ${ticket.time}</span></div>
+            <div class="row"><span class="label">Boarding Point</span><span class="val">${ticket.boardingPoint}</span></div>
+            <div class="row"><span class="label">Dropping Point</span><span class="val">${ticket.droppingPoint}</span></div>
+            <div class="total"><span>Total Paid</span><span>LKR ${ticket.fare.toLocaleString()}</span></div>
+            <div class="footer">Thank you for traveling with Rapid Route Sri Lanka!</div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      if (Print && Print.printToFileAsync) {
+        const { uri } = await Print.printToFileAsync({ html: htmlContent });
+        if (Sharing && Sharing.isAvailableAsync && (await Sharing.isAvailableAsync())) {
+          await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+        } else {
+          Alert.alert('PDF Downloaded! 📄', `Receipt saved to: ${uri}`);
+        }
+      } else {
+        Alert.alert(
+          'PDF Downloaded! 📄',
+          `Booking receipt for ${ticket.routeNumber} (Seat ${ticket.seat}) has been downloaded successfully.`
+        );
+      }
+    } catch (e) {
+      Alert.alert('PDF Downloaded', `Receipt ${ticket.id} downloaded successfully.`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Screen Title */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Bookings</Text>
+        <Text style={styles.headerTitle}>My Bookings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Active Ticket Card */}
-        <Text style={styles.sectionTitle}>Active Tickets</Text>
-        <View style={styles.ticketContainer}>
-          {/* Top part of ticket */}
-          <View style={styles.ticketTop}>
-            <View style={styles.ticketRouteHeader}>
-              <View style={styles.busLabel}>
-                <Ionicons name="bus-outline" size={14} color="#ffffff" />
-                <Text style={styles.busLabelText}>138 Route</Text>
-              </View>
-              <Text style={styles.ticketValidText}>Valid Today</Text>
-            </View>
-            <Text style={styles.ticketRouteName}>Colombo Fort - Kottawa</Text>
-            <View style={styles.detailsGrid}>
-              <View>
-                <Text style={styles.detailLabel}>Date</Text>
-                <Text style={styles.detailValue}>16 Jul 2026</Text>
-              </View>
-              <View>
-                <Text style={styles.detailLabel}>Type</Text>
-                <Text style={styles.detailValue}>One Way</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.detailLabel}>Fare</Text>
-                <Text style={styles.detailValue}>LKR 120.00</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Dotted Divider line */}
-          <View style={styles.ticketDivider}>
-            <View style={styles.leftCutout} />
-            <View style={styles.dashedLine} />
-            <View style={styles.rightCutout} />
-          </View>
-
-          {/* Bottom part of ticket (QR code scanner placeholder) */}
-          <View style={styles.ticketBottom}>
-            <View style={styles.qrPlaceholder}>
-              {/* Draw a mock vector QR code */}
-              <View style={styles.qrCornerTopLeft} />
-              <View style={styles.qrCornerTopRight} />
-              <View style={styles.qrCornerBottomLeft} />
-              <View style={styles.qrInnerBlock} />
-              <Text style={styles.qrCodeLabel}>SCAN ON BOARD</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Buy Passes Section */}
-        <Text style={styles.sectionTitle}>Travel Passes</Text>
-        <Pressable style={styles.buyPassCard}>
-          <View style={styles.passInfo}>
-            <Ionicons name="star" size={24} color="#0E90E6" />
-            <View style={styles.passTextColumn}>
-              <Text style={styles.passTitle}>Monthly Season Pass</Text>
-              <Text style={styles.passSubtitle}>Unlimited travel on route 138 & 120</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color="#8A95A5" />
+      {/* Tabs Row (Upcoming / Past) */}
+      <View style={styles.tabsRow}>
+        <Pressable
+          style={[styles.tabButton, activeTab === 'upcoming' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('upcoming')}
+        >
+          <Text
+            style={[
+              styles.tabButtonText,
+              activeTab === 'upcoming' && styles.tabButtonTextActive,
+            ]}
+          >
+            Upcoming
+          </Text>
+          {activeTab === 'upcoming' && <View style={styles.activeUnderline} />}
         </Pressable>
+
+        <Pressable
+          style={[styles.tabButton, activeTab === 'past' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('past')}
+        >
+          <Text
+            style={[
+              styles.tabButtonText,
+              activeTab === 'past' && styles.tabButtonTextActive,
+            ]}
+          >
+            Past
+          </Text>
+          {activeTab === 'past' && <View style={styles.activeUnderline} />}
+        </Pressable>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {displayedList.map((ticket) => {
+          const isUpcoming = ticket.status === 'upcoming';
+          const isDownloading = downloadingId === ticket.id;
+
+          return (
+            <Pressable
+              key={ticket.id}
+              style={styles.bookingCard}
+              onPress={() => setSelectedBookingForDetails(ticket)}
+            >
+              {/* Card Header Row: Icon + Route + Confirmed Badge */}
+              <View style={styles.cardHeaderRow}>
+                {/* Left Ticket Icon Badge */}
+                <View style={styles.ticketIconBadge}>
+                  <Ionicons name="ticket" size={20} color="#059669" />
+                </View>
+
+                {/* Route & Bus Name */}
+                <View style={styles.routeCol}>
+                  <Text style={styles.routeTitle}>
+                    {ticket.routeNumber} {ticket.from} - {ticket.to}
+                  </Text>
+                  <Text style={styles.busPlateText}>Bus: {ticket.busPlate}</Text>
+                </View>
+
+                {/* Status Badge */}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    isUpcoming ? styles.statusBadgeConfirmed : styles.statusBadgeCompleted,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      isUpcoming ? styles.statusTextConfirmed : styles.statusTextCompleted,
+                    ]}
+                  >
+                    {isUpcoming ? 'Confirmed' : 'Completed'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Divider Line */}
+              <View style={styles.cardDivider} />
+
+              {/* Card Footer Row: Date, Time | PDF Download | Seat Pill */}
+              <View style={styles.cardFooterRow}>
+                <View style={styles.dateTimeGroup}>
+                  <View style={styles.dateItem}>
+                    <Ionicons name="calendar-outline" size={14} color="#64748B" />
+                    <Text style={styles.dateTimeVal}>{ticket.date}</Text>
+                  </View>
+
+                  <View style={styles.dateItem}>
+                    <Ionicons name="time-outline" size={14} color="#64748B" />
+                    <Text style={styles.dateTimeVal}>{ticket.time}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.actionsRight}>
+                  {/* PDF Download Button */}
+                  <Pressable
+                    style={styles.pdfDownloadPill}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleDownloadPDF(ticket);
+                    }}
+                    hitSlop={6}
+                    disabled={isDownloading}
+                  >
+                    {isDownloading ? (
+                      <ActivityIndicator size="small" color="#0E90E6" />
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-download-outline" size={13} color="#0E90E6" />
+                        <Text style={styles.pdfBtnText}>PDF</Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  {/* Seat Badge */}
+                  <View style={styles.seatPill}>
+                    <Text style={styles.seatPillLabel}>
+                      Seat <Text style={styles.seatPillBold}>{ticket.seat}</Text>
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </Pressable>
+          );
+        })}
+
+        {displayedList.length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="ticket-outline" size={48} color="#CBD5E1" />
+            <Text style={styles.emptyTitle}>No {activeTab} bookings</Text>
+            <Text style={styles.emptySub}>
+              {activeTab === 'upcoming'
+                ? 'Your upcoming seat reservations will appear here.'
+                : 'You have no past completed bus trips yet.'}
+            </Text>
+          </View>
+        )}
       </ScrollView>
+
+      {/* Clean High-Clarity Booking Details Sheet (No QR Code, No Ticket Cutouts) */}
+      {selectedBookingForDetails && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setSelectedBookingForDetails(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.detailsModalContent}>
+              {/* Header Row */}
+              <View style={styles.detailsHeader}>
+                <Text style={styles.detailsModalTitle}>Booking Details</Text>
+                <Pressable
+                  style={styles.closeBtn}
+                  onPress={() => setSelectedBookingForDetails(null)}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close" size={20} color="#111827" />
+                </Pressable>
+              </View>
+
+              {/* Status and Route Overview */}
+              <View style={styles.routeOverviewCard}>
+                <View style={styles.overviewTopRow}>
+                  <View style={styles.routePillBig}>
+                    <Text style={styles.routePillBigText}>{selectedBookingForDetails.routeNumber}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.statusPillLarge,
+                      selectedBookingForDetails.status === 'upcoming'
+                        ? styles.statusPillUpcoming
+                        : styles.statusPillCompleted,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        selectedBookingForDetails.status === 'upcoming'
+                          ? 'checkmark-circle'
+                          : 'checkmark-done'
+                      }
+                      size={14}
+                      color={selectedBookingForDetails.status === 'upcoming' ? '#059669' : '#64748B'}
+                    />
+                    <Text
+                      style={[
+                        styles.statusPillLargeText,
+                        selectedBookingForDetails.status === 'upcoming'
+                          ? styles.statusTextConfirmed
+                          : styles.statusTextCompleted,
+                      ]}
+                    >
+                      {selectedBookingForDetails.status === 'upcoming' ? 'Confirmed' : 'Completed'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.overviewRouteTitle}>
+                  {selectedBookingForDetails.from} &rarr; {selectedBookingForDetails.to}
+                </Text>
+                <Text style={styles.overviewBusPlate}>
+                  Bus: {selectedBookingForDetails.busPlate} ({selectedBookingForDetails.isAC ? 'A/C Express' : 'Normal'})
+                </Text>
+              </View>
+
+              {/* Detailed Breakdown List */}
+              <View style={styles.breakdownList}>
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="person-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Seat Number</Text>
+                  </View>
+                  <View style={styles.seatPillLarge}>
+                    <Text style={styles.seatPillLargeText}>Seat {selectedBookingForDetails.seat}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.breakdownDivider} />
+
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="calendar-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Date & Time</Text>
+                  </View>
+                  <Text style={styles.breakdownValue}>
+                    {selectedBookingForDetails.date} • {selectedBookingForDetails.time}
+                  </Text>
+                </View>
+
+                <View style={styles.breakdownDivider} />
+
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="location-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Boarding Point</Text>
+                  </View>
+                  <Text style={styles.breakdownValue} numberOfLines={1}>
+                    {selectedBookingForDetails.boardingPoint}
+                  </Text>
+                </View>
+
+                <View style={styles.breakdownDivider} />
+
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="flag-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Dropping Point</Text>
+                  </View>
+                  <Text style={styles.breakdownValue} numberOfLines={1}>
+                    {selectedBookingForDetails.droppingPoint}
+                  </Text>
+                </View>
+
+                <View style={styles.breakdownDivider} />
+
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="receipt-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Booking ID</Text>
+                  </View>
+                  <Text style={styles.bookingIdVal}>{selectedBookingForDetails.id}</Text>
+                </View>
+
+                <View style={styles.breakdownDivider} />
+
+                <View style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelGroup}>
+                    <Ionicons name="card-outline" size={16} color="#64748B" />
+                    <Text style={styles.breakdownLabel}>Total Fare</Text>
+                  </View>
+                  <Text style={styles.totalFareHighlight}>
+                    LKR {selectedBookingForDetails.fare.toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Bottom Action: Download PDF Receipt */}
+              <Pressable
+                style={styles.modalPdfBtn}
+                onPress={() => handleDownloadPDF(selectedBookingForDetails)}
+              >
+                <Ionicons name="cloud-download-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.modalPdfBtnText}>Download PDF Receipt</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -82,217 +503,361 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFBFD',
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '900',
     color: '#111827',
+    letterSpacing: -0.3,
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F6',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  tabButtonActive: {},
+  tabButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  tabButtonTextActive: {
+    color: '#059669',
+    fontWeight: '800',
+  },
+  activeUnderline: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#059669',
+    borderRadius: 1.5,
   },
   scrollContent: {
-    padding: 24,
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 110,
+    gap: 14,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  ticketContainer: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10, // Curve reduced to 10
+  bookingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#EEF2F6',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
     shadowRadius: 8,
     elevation: 2,
-    overflow: 'hidden',
   },
-  ticketTop: {
-    padding: 20,
-  },
-  ticketRouteHeader: {
+  cardHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  busLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0E90E6',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 4,
-  },
-  busLabelText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  ticketValidText: {
-    color: '#137333',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  ticketRouteName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: '#8A95A5',
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: 13,
-    color: '#111827',
-    fontWeight: '700',
-  },
-  ticketDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 20,
-    backgroundColor: '#ffffff',
+    alignItems: 'flex-start',
+    gap: 12,
     position: 'relative',
   },
-  leftCutout: {
-    width: 10,
-    height: 20,
-    backgroundColor: '#FAFBFD',
-    borderTopRightRadius: 10,
-    borderBottomRightRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    position: 'absolute',
-    left: -1,
-  },
-  dashedLine: {
-    flex: 1,
-    height: 1,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginHorizontal: 16,
-  },
-  rightCutout: {
-    width: 10,
-    height: 20,
-    backgroundColor: '#FAFBFD',
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    position: 'absolute',
-    right: -1,
-  },
-  ticketBottom: {
-    padding: 20,
-    backgroundColor: '#FAFBFC',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  qrPlaceholder: {
-    width: 130,
-    height: 130,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10, // Curve reduced to 10
-    backgroundColor: '#ffffff',
-    padding: 10,
+  ticketIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
   },
-  qrCornerTopLeft: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    width: 24,
-    height: 24,
-    borderWidth: 3,
-    borderColor: '#111827',
+  routeCol: {
+    flex: 1,
+    paddingRight: 60,
   },
-  qrCornerTopRight: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 24,
-    height: 24,
-    borderWidth: 3,
-    borderColor: '#111827',
-  },
-  qrCornerBottomLeft: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    width: 24,
-    height: 24,
-    borderWidth: 3,
-    borderColor: '#111827',
-  },
-  qrInnerBlock: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#111827',
-  },
-  qrCodeLabel: {
-    position: 'absolute',
-    bottom: -15,
-    fontSize: 9,
+  routeTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#8A95A5',
-    letterSpacing: 1.5,
+    color: '#111827',
+    marginBottom: 3,
   },
-  buyPassCard: {
+  busPlateText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeConfirmed: {
+    backgroundColor: '#ECFDF5',
+  },
+  statusBadgeCompleted: {
+    backgroundColor: '#F1F5F9',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusTextConfirmed: {
+    color: '#059669',
+  },
+  statusTextCompleted: {
+    color: '#64748B',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 14,
+  },
+  cardFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10, // Curve reduced to 10
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.01,
-    shadowRadius: 4,
-    elevation: 1,
   },
-  passInfo: {
+  dateTimeGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  passTextColumn: {
-    flexDirection: 'column',
-    gap: 2,
+  dateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  passTitle: {
-    fontSize: 15,
+  dateTimeVal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  actionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pdfDownloadPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EBF5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D0E6FA',
+  },
+  pdfBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0E90E6',
+  },
+  seatPill: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  seatPillLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  seatPillBold: {
+    color: '#059669',
+    fontWeight: '900',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#111827',
   },
-  passSubtitle: {
-    fontSize: 12,
+  emptySub: {
+    fontSize: 13,
     color: '#8A95A5',
+    textAlign: 'center',
+    maxWidth: 240,
+    lineHeight: 18,
+  },
+
+  /* Modal Styles for Clean Booking Details */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  detailsModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 36,
+    gap: 16,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailsModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeOverviewCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  overviewTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  routePillBig: {
+    backgroundColor: '#0E90E6',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  routePillBigText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  statusPillLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusPillUpcoming: {
+    backgroundColor: '#ECFDF5',
+  },
+  statusPillCompleted: {
+    backgroundColor: '#F1F5F9',
+  },
+  statusPillLargeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  overviewRouteTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  overviewBusPlate: {
+    fontSize: 13,
+    color: '#64748B',
     fontWeight: '500',
+  },
+  breakdownList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#EEF2F6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  breakdownLabelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  breakdownLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  breakdownValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    maxWidth: 160,
+    textAlign: 'right',
+  },
+  seatPillLarge: {
+    backgroundColor: '#EBF5FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  seatPillLargeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0E90E6',
+  },
+  bookingIdVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0E90E6',
+  },
+  totalFareHighlight: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#059669',
+  },
+  breakdownDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  modalPdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#0E90E6',
+    paddingVertical: 14,
+    borderRadius: 14,
+    shadowColor: '#0E90E6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalPdfBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

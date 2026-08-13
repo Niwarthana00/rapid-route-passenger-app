@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Pressable, SafeAreaView, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');

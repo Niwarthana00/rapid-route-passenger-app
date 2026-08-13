@@ -1,9 +1,33 @@
-import React from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, SafeAreaView, ScrollView, Platform } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TextInput, Pressable, Platform, ScrollView } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { RouteDetailView } from '../components/route-detail-view';
+import { NotificationsView } from '../components/notifications-view';
+import { useTabBar } from '../context/tab-bar-context';
 
-// Mock Map Component
+interface RouteItem {
+  id: string;
+  routeNumber: string;
+  from: string;
+  to: string;
+  activeBuses: number;
+}
+
+const SAMPLE_ROUTES: RouteItem[] = [
+  { id: '1', routeNumber: '1-1', from: 'Colombo', to: 'Kandy', activeBuses: 3 },
+  { id: '2', routeNumber: '17', from: 'Panadura', to: 'Kandy', activeBuses: 3 },
+  { id: '3', routeNumber: '15', from: 'Colombo', to: 'Anuradhapura', activeBuses: 2 },
+  { id: '4', routeNumber: '48', from: 'Colombo', to: 'Kaduruwela', activeBuses: 1 },
+  { id: '5', routeNumber: '138', from: 'Colombo Fort', to: 'Kottawa', activeBuses: 8 },
+  { id: '6', routeNumber: '120', from: 'Pettah', to: 'Horana', activeBuses: 4 },
+  { id: '7', routeNumber: '100', from: 'Panadura', to: 'Pettah', activeBuses: 6 },
+  { id: '8', routeNumber: '177', from: 'Kaduwela', to: 'Kollupitiya', activeBuses: 3 },
+];
+
+// Mock Map Component for Home Screen
 const VectorMapBackground = () => (
   <View style={styles.mapContainer}>
     <Svg width="100%" height="100%" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice" style={styles.mapSvg}>
@@ -16,8 +40,7 @@ const VectorMapBackground = () => (
         fill="#C5DFEB"
       />
       
-      {/* Roads */}
-      {/* Vertical Road */}
+      {/* Primary Roads */}
       <Path
         d="M 120 -50 C 140 150, 110 250, 150 450"
         fill="none"
@@ -59,7 +82,6 @@ const VectorMapBackground = () => (
         <Text style={styles.markerText}>138</Text>
       </View>
       <View style={styles.arrowContainer}>
-        {/* We can use a simple custom triangle or arrow view */}
         <View style={[styles.navigationArrow, { transform: [{ rotate: '45deg' }] }]} />
       </View>
     </View>
@@ -77,94 +99,313 @@ const VectorMapBackground = () => (
 );
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, 20);
+  const { setTabBarVisible } = useTabBar();
+
+  const [isSearching, setIsSearching] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRoute, setSelectedRoute] = useState<{
+    routeNumber: string;
+    from: string;
+    to: string;
+  } | null>(null);
+
+  // Automatically hide tab bar when searching, viewing route detail or notifications
+  useEffect(() => {
+    if (isSearching || selectedRoute !== null || isNotificationsOpen) {
+      setTabBarVisible(false);
+    } else {
+      setTabBarVisible(true);
+    }
+  }, [isSearching, selectedRoute, isNotificationsOpen, setTabBarVisible]);
+
+  const filteredRoutes = SAMPLE_ROUTES.filter((route) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      route.routeNumber.toLowerCase().includes(query) ||
+      route.from.toLowerCase().includes(query) ||
+      route.to.toLowerCase().includes(query)
+    );
+  });
+
+  const handleSelectRoute = (route: RouteItem) => {
+    setSelectedRoute({
+      routeNumber: route.routeNumber,
+      from: route.from,
+      to: route.to,
+    });
+    setIsSearching(false);
+  };
+
+  const handleSelectNearbyBus = (routeNumber: string, from: string, to: string) => {
+    setSelectedRoute({
+      routeNumber,
+      from,
+      to,
+    });
+  };
+
+  // If Notifications Screen is opened
+  if (isNotificationsOpen) {
+    return (
+      <NotificationsView
+        onBack={() => setIsNotificationsOpen(false)}
+      />
+    );
+  }
+
+  // If a specific route is opened (Route Detail Screen)
+  if (selectedRoute) {
+    return (
+      <RouteDetailView
+        routeNumber={selectedRoute.routeNumber}
+        from={selectedRoute.from}
+        to={selectedRoute.to}
+        onBack={() => {
+          setSelectedRoute(null);
+          setTabBarVisible(true);
+        }}
+      />
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header Overlay */}
-      <View style={styles.headerContainer}>
-        <View style={styles.greetingContainer}>
-          <Text style={styles.greetingText}>Good morning,</Text>
-          <View style={styles.locationRow}>
-            <Ionicons name="location" size={18} color="#0E90E6" />
-            <Text style={styles.locationText}>Colombo</Text>
+    <View style={styles.container}>
+      {/* When in Search Mode */}
+      {isSearching ? (
+        <View style={[styles.searchViewContainer, { paddingTop: topInset + (Platform.OS === 'ios' ? 8 : 12) }]}>
+          {/* Top Search Bar with Back Button */}
+          <View style={styles.searchHeaderRow}>
+            <Pressable
+              onPress={() => setIsSearching(false)}
+              style={styles.backButton}
+              hitSlop={10}
+            >
+              <Ionicons name="chevron-back" size={24} color="#111827" />
+            </Pressable>
+
+            <View style={styles.searchInputWrapper}>
+              <Ionicons name="search-outline" size={20} color="#0E90E6" style={styles.searchFieldIcon} />
+              <TextInput
+                style={styles.searchFieldInput}
+                placeholder="Search route or destination..."
+                placeholderTextColor="#8A95A5"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color="#8A95A5" />
+                </Pressable>
+              )}
+            </View>
           </View>
+
+          {/* Search Content ScrollView */}
+          <ScrollView
+            style={styles.searchScrollView}
+            contentContainerStyle={styles.searchScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.searchSectionTitle}>Matching Routes</Text>
+
+            {filteredRoutes.length > 0 ? (
+              <View style={styles.routesCardContainer}>
+                {filteredRoutes.map((route, index) => {
+                  const isLast = index === filteredRoutes.length - 1;
+                  return (
+                    <Pressable
+                      key={route.id}
+                      style={[styles.routeRowItem, isLast && styles.routeRowItemLast]}
+                      onPress={() => handleSelectRoute(route)}
+                    >
+                      {/* Route Number Badge */}
+                      <View style={styles.routeBadgePill}>
+                        <Text style={styles.routeBadgeText}>{route.routeNumber}</Text>
+                      </View>
+
+                      {/* Route Info */}
+                      <View style={styles.routeInfoCol}>
+                        <View style={styles.routeDestinationRow}>
+                          <Text style={styles.routeFromText}>{route.from}</Text>
+                          <Ionicons name="arrow-forward" size={14} color="#64748B" style={styles.routeArrow} />
+                          <Text style={styles.routeToText}>{route.to}</Text>
+                        </View>
+                        <View style={styles.activeBusesRow}>
+                          <Ionicons name="bus" size={13} color="#0E90E6" />
+                          <Text style={styles.activeBusesText}>{route.activeBuses} active buses</Text>
+                        </View>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyStateContainer}>
+                <Ionicons name="search" size={40} color="#CBD5E1" />
+                <Text style={styles.emptyStateTitle}>No matching routes</Text>
+                <Text style={styles.emptyStateSub}>
+                  No routes found matching &ldquo;{searchQuery}&rdquo;. Try another city or bus number.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
-        
-        {/* Profile Avatar */}
-        <Pressable style={styles.profileBadge}>
-          <Text style={styles.profileText}>JD</Text>
-        </Pressable>
-      </View>
+      ) : (
+        /* Normal Map + Bottom Sheet Home View */
+        <>
+          {/* Mock Map Background */}
+          <VectorMapBackground />
 
-      {/* Search Input Overlay */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={20} color="#8A95A5" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search route or halt..."
-            placeholderTextColor="#8A95A5"
-            editable={false} // Presentation only
-          />
-        </View>
-      </View>
+          {/* Top Floating Header & Search Area */}
+          <View style={[styles.topSection, { paddingTop: topInset + (Platform.OS === 'ios' ? 8 : 12) }]}>
+            {/* Header Overlay */}
+            <View style={styles.headerContainer}>
+              <View style={styles.greetingContainer}>
+                <Text style={styles.greetingText}>Good morning,</Text>
+                <View style={styles.locationRow}>
+                  <Ionicons name="location" size={16} color="#0E90E6" />
+                  <Text style={styles.locationText}>Colombo</Text>
+                </View>
+              </View>
+              
+              {/* Header Right: Notification Bell + Profile Avatar */}
+              <View style={styles.headerRightRow}>
+                <Pressable
+                  style={styles.notificationBadge}
+                  onPress={() => setIsNotificationsOpen(true)}
+                  hitSlop={8}
+                >
+                  <Ionicons name="notifications-outline" size={20} color="#111827" />
+                  <View style={styles.unreadRedDot} />
+                </Pressable>
 
-      {/* Mock Map Background */}
-      <VectorMapBackground />
-
-      {/* Bottom Sheet Details */}
-      <View style={styles.bottomSheet}>
-        {/* Handle Indicator */}
-        <View style={styles.handleContainer}>
-          <View style={styles.sheetHandle} />
-        </View>
-
-        <Text style={styles.sheetTitle}>Nearby Buses</Text>
-
-        <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
-          {/* Bus Card 138 */}
-          <View style={styles.busCard}>
-            <View style={styles.busInfo}>
-              <Text style={styles.busRouteTitle}>138 Kottawa - Pettah</Text>
-              <Text style={styles.busETA}>
-                ETA: <Text style={styles.busETABold}>2 min</Text>
-              </Text>
+                <Pressable
+                  style={styles.profileBadge}
+                  onPress={() => router.push('/profile')}
+                  hitSlop={8}
+                >
+                  <Text style={styles.profileText}>JD</Text>
+                </Pressable>
+              </View>
             </View>
-            <View style={[styles.statusBadge, styles.badgeAvailable]}>
-              <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
-              <Text style={[styles.badgeText, styles.textAvailable]}>12 left</Text>
-            </View>
+
+            {/* Search Bar (Click to Open Search) */}
+            <Pressable
+              style={styles.searchContainer}
+              onPress={() => setIsSearching(true)}
+            >
+              <View style={styles.searchBar}>
+                <Ionicons name="search-outline" size={20} color="#0E90E6" style={styles.searchIcon} />
+                <Text style={styles.searchBarPlaceholder}>
+                  {searchQuery ? searchQuery : 'Search route or destination...'}
+                </Text>
+                {searchQuery ? (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setSearchQuery('');
+                    }}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close-circle" size={18} color="#8A95A5" />
+                  </Pressable>
+                ) : null}
+              </View>
+            </Pressable>
           </View>
 
-          {/* Bus Card 120 */}
-          <View style={styles.busCard}>
-            <View style={styles.busInfo}>
-              <Text style={styles.busRouteTitle}>120 Horana - Pettah</Text>
-              <Text style={styles.busETA}>
-                ETA: <Text style={styles.busETABold}>5 min</Text>
-              </Text>
+          {/* Bottom Sheet Details */}
+          <View style={styles.bottomSheet}>
+            {/* Handle Indicator */}
+            <View style={styles.handleContainer}>
+              <View style={styles.sheetHandle} />
             </View>
-            <View style={[styles.statusBadge, styles.badgeAvailable]}>
-              <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
-              <Text style={[styles.badgeText, styles.textAvailable]}>4 left</Text>
-            </View>
-          </View>
 
-          {/* Bus Card 17 */}
-          <View style={styles.busCard}>
-            <View style={styles.busInfo}>
-              <Text style={styles.busRouteTitle}>17 Panadura - Kandy</Text>
-              <Text style={styles.busETA}>
-                ETA: <Text style={styles.busETABold}>8 min</Text>
-              </Text>
-            </View>
-            <View style={[styles.statusBadge, styles.badgeFull]}>
-              <Ionicons name="people" size={14} color="#EF4444" style={styles.badgeIcon} />
-              <Text style={[styles.badgeText, styles.textFull]}>Full</Text>
-            </View>
+            <Text style={styles.sheetTitle}>Nearby Buses</Text>
+
+            <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+              {/* Bus Card 138 */}
+              <Pressable
+                style={styles.busCard}
+                onPress={() => handleSelectNearbyBus('138', 'Colombo Fort', 'Kottawa')}
+              >
+                <View style={styles.busInfo}>
+                  <Text style={styles.busRouteTitle}>138 Kottawa - Pettah</Text>
+                  <Text style={styles.busETA}>
+                    ETA: <Text style={styles.busETABold}>2 min</Text>
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, styles.badgeAvailable]}>
+                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
+                  <Text style={[styles.badgeText, styles.textAvailable]}>12 left</Text>
+                </View>
+              </Pressable>
+
+              {/* Bus Card 1-1 Colombo - Kandy */}
+              <Pressable
+                style={styles.busCard}
+                onPress={() => handleSelectNearbyBus('1-1', 'Colombo', 'Kandy')}
+              >
+                <View style={styles.busInfo}>
+                  <Text style={styles.busRouteTitle}>1-1 Colombo - Kandy</Text>
+                  <Text style={styles.busETA}>
+                    ETA: <Text style={styles.busETABold}>4 min</Text>
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, styles.badgeAvailable]}>
+                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
+                  <Text style={[styles.badgeText, styles.textAvailable]}>12 left</Text>
+                </View>
+              </Pressable>
+
+              {/* Bus Card 120 */}
+              <Pressable
+                style={styles.busCard}
+                onPress={() => handleSelectNearbyBus('120', 'Pettah', 'Horana')}
+              >
+                <View style={styles.busInfo}>
+                  <Text style={styles.busRouteTitle}>120 Horana - Pettah</Text>
+                  <Text style={styles.busETA}>
+                    ETA: <Text style={styles.busETABold}>5 min</Text>
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, styles.badgeAvailable]}>
+                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
+                  <Text style={[styles.badgeText, styles.textAvailable]}>4 left</Text>
+                </View>
+              </Pressable>
+
+              {/* Bus Card 17 */}
+              <Pressable
+                style={styles.busCard}
+                onPress={() => handleSelectNearbyBus('17', 'Panadura', 'Kandy')}
+              >
+                <View style={styles.busInfo}>
+                  <Text style={styles.busRouteTitle}>17 Panadura - Kandy</Text>
+                  <Text style={styles.busETA}>
+                    ETA: <Text style={styles.busETABold}>8 min</Text>
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, styles.badgeFull]}>
+                  <Ionicons name="people" size={14} color="#EF4444" style={styles.badgeIcon} />
+                  <Text style={[styles.badgeText, styles.textFull]}>Full</Text>
+                </View>
+              </Pressable>
+            </ScrollView>
           </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -182,24 +423,29 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  headerContainer: {
+  topSection: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
-    left: 24,
-    right: 24,
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    zIndex: 20,
+  },
+  headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    zIndex: 10,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   greetingContainer: {
     flexDirection: 'column',
   },
   greetingText: {
     fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-    marginBottom: 4,
+    color: '#4B5563',
+    fontWeight: '600',
+    marginBottom: 2,
   },
   locationRow: {
     flexDirection: 'row',
@@ -207,14 +453,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   locationText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#111827',
   },
-  profileBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  notificationBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -222,43 +473,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
+  },
+  unreadRedDot: {
+    position: 'absolute',
+    top: 10,
+    right: 11,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EF4444',
+  },
+  profileBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
   profileText: {
     color: '#0E90E6',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   searchContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 110 : 80,
-    left: 24,
-    right: 24,
-    zIndex: 10,
+    width: '100%',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: 10, // Curve reduced to 10
+    borderRadius: 14,
     paddingHorizontal: 16,
     height: 52,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  searchBarPlaceholder: {
+    flex: 1,
+    fontSize: 15,
+    color: '#8A95A5',
+    fontWeight: '500',
   },
   searchIcon: {
     marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '500',
   },
   busMarker: {
     position: 'absolute',
@@ -303,10 +577,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  arrowIcon: {
-    position: 'absolute',
-    zIndex: 6,
-  },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,
@@ -344,7 +614,7 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     gap: 12,
-    paddingBottom: 24,
+    paddingBottom: 95,
   },
   busCard: {
     flexDirection: 'row',
@@ -353,11 +623,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#F3F4F6',
-    borderRadius: 10, // Curve reduced to 10
+    borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.01,
+    shadowOpacity: 0.02,
     shadowRadius: 4,
     elevation: 1,
   },
@@ -405,5 +675,162 @@ const styles = StyleSheet.create({
   },
   textFull: {
     color: '#EF4444',
+  },
+
+  /* Search View Overlay Styles */
+  searchViewContainer: {
+    flex: 1,
+    backgroundColor: '#FAFBFD',
+    paddingHorizontal: 20,
+  },
+  searchHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  searchInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 50,
+    borderWidth: 1.5,
+    borderColor: '#0E90E6',
+    shadowColor: '#0E90E6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  searchFieldIcon: {
+    marginRight: 8,
+  },
+  searchFieldInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    paddingVertical: 0,
+  },
+  searchScrollView: {
+    flex: 1,
+  },
+  searchScrollContent: {
+    paddingBottom: 110,
+  },
+  searchSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  routesCardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  routeRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 14,
+  },
+  routeRowItemLast: {
+    borderBottomWidth: 0,
+  },
+  routeBadgePill: {
+    backgroundColor: '#EBF5FF',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeBadgeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0E90E6',
+  },
+  routeInfoCol: {
+    flex: 1,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  routeDestinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  routeFromText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  routeArrow: {
+    marginTop: 1,
+  },
+  routeToText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  activeBusesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  activeBusesText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 8,
+  },
+  emptyStateSub: {
+    fontSize: 13,
+    color: '#8A95A5',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

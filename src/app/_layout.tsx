@@ -3,10 +3,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 import { useState } from 'react';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import { OnboardingOverlay } from '@/components/onboarding';
-import { LoginOverlay } from '@/components/login';
-import AppTabs from '@/components/app-tabs';
+import { AnimatedSplashOverlay } from '../components/animated-icon';
+import { OnboardingOverlay } from '../components/onboarding';
+import { LoginOverlay } from '../components/login';
+import AppTabs from '../components/app-tabs';
+import { TabBarProvider } from '../context/tab-bar-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -17,14 +18,16 @@ export default function TabLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      {!isOnboarded && (
-        <OnboardingOverlay onFinish={() => setIsOnboarded(true)} />
-      )}
-      {isOnboarded && !isLoggedIn && (
-        <LoginOverlay onLoginSuccess={() => setIsLoggedIn(true)} />
-      )}
-      <AppTabs />
+      <TabBarProvider>
+        <AnimatedSplashOverlay />
+        {!isOnboarded && (
+          <OnboardingOverlay onFinish={() => setIsOnboarded(true)} />
+        )}
+        {isOnboarded && !isLoggedIn && (
+          <LoginOverlay onLoginSuccess={() => setIsLoggedIn(true)} />
+        )}
+        <AppTabs />
+      </TabBarProvider>
     </ThemeProvider>
   );
 }

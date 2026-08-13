@@ -248,16 +248,16 @@ export default function BookingsScreen() {
               style={styles.bookingCard}
               onPress={() => setSelectedBookingForDetails(ticket)}
             >
-              {/* Card Header Row: Icon + Route + Confirmed Badge */}
+              {/* Card Header Row: Icon + Route (flex:1, 1 line) + Status Badge */}
               <View style={styles.cardHeaderRow}>
                 {/* Left Ticket Icon Badge */}
                 <View style={styles.ticketIconBadge}>
-                  <Ionicons name="ticket" size={20} color="#059669" />
+                  <Ionicons name="ticket" size={18} color="#0E90E6" />
                 </View>
 
                 {/* Route & Bus Name */}
                 <View style={styles.routeCol}>
-                  <Text style={styles.routeTitle}>
+                  <Text style={styles.routeTitle} numberOfLines={1} ellipsizeMode="tail">
                     {ticket.routeNumber} {ticket.from} - {ticket.to}
                   </Text>
                   <Text style={styles.busPlateText}>Bus: {ticket.busPlate}</Text>
@@ -284,16 +284,16 @@ export default function BookingsScreen() {
               {/* Divider Line */}
               <View style={styles.cardDivider} />
 
-              {/* Card Footer Row: Date, Time | PDF Download | Seat Pill */}
+              {/* Card Footer Row: Date, Time | PDF Download | Seat Pill (Unclipped & wrapped) */}
               <View style={styles.cardFooterRow}>
                 <View style={styles.dateTimeGroup}>
                   <View style={styles.dateItem}>
-                    <Ionicons name="calendar-outline" size={14} color="#64748B" />
+                    <Ionicons name="calendar-outline" size={13} color="#64748B" />
                     <Text style={styles.dateTimeVal}>{ticket.date}</Text>
                   </View>
 
                   <View style={styles.dateItem}>
-                    <Ionicons name="time-outline" size={14} color="#64748B" />
+                    <Ionicons name="time-outline" size={13} color="#64748B" />
                     <Text style={styles.dateTimeVal}>{ticket.time}</Text>
                   </View>
                 </View>
@@ -319,9 +319,9 @@ export default function BookingsScreen() {
                     )}
                   </Pressable>
 
-                  {/* Seat Badge */}
+                  {/* Seat Badge (Contained safely within card bounds) */}
                   <View style={styles.seatPill}>
-                    <Text style={styles.seatPillLabel}>
+                    <Text style={styles.seatPillLabel} numberOfLines={1}>
                       Seat <Text style={styles.seatPillBold}>{ticket.seat}</Text>
                     </Text>
                   </View>
@@ -384,10 +384,10 @@ export default function BookingsScreen() {
                       name={
                         selectedBookingForDetails.status === 'upcoming'
                           ? 'checkmark-circle'
-                          : 'checkmark-done'
+                          : 'checkmark-done-circle'
                       }
                       size={14}
-                      color={selectedBookingForDetails.status === 'upcoming' ? '#059669' : '#64748B'}
+                      color={selectedBookingForDetails.status === 'upcoming' ? '#0E90E6' : '#059669'}
                     />
                     <Text
                       style={[
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   tabButtonTextActive: {
-    color: '#059669',
+    color: '#0E90E6',
     fontWeight: '800',
   },
   activeUnderline: {
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: '#059669',
+    backgroundColor: '#0E90E6',
     borderRadius: 1.5,
   },
   scrollContent: {
@@ -565,96 +565,104 @@ const styles = StyleSheet.create({
   },
   cardHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    position: 'relative',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
   },
   ticketIconBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#ECFDF5',
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: '#EBF5FF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#D1FAE5',
+    borderColor: '#D0E6FA',
+    flexShrink: 0,
   },
   routeCol: {
     flex: 1,
-    paddingRight: 60,
+    paddingRight: 6,
   },
   routeTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 3,
+    marginBottom: 2,
   },
   busPlateText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '500',
   },
   statusBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
+    alignSelf: 'center',
+    flexShrink: 0,
   },
   statusBadgeConfirmed: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#EBF5FF',
+    borderWidth: 1,
+    borderColor: '#D0E6FA',
   },
   statusBadgeCompleted: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
   },
   statusBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   statusTextConfirmed: {
-    color: '#059669',
+    color: '#0E90E6',
   },
   statusTextCompleted: {
-    color: '#64748B',
+    color: '#059669', // Green color for Completed
   },
   cardDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
-    marginVertical: 14,
+    marginVertical: 12,
   },
   cardFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'nowrap',
+    gap: 6,
   },
   dateTimeGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 1,
   },
   dateItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   dateTimeVal: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#334155',
   },
   actionsRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   pdfDownloadPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: '#EBF5FF',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#D0E6FA',
@@ -666,19 +674,20 @@ const styles = StyleSheet.create({
   },
   seatPill: {
     backgroundColor: '#F8FAFC',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    maxWidth: 110,
   },
   seatPillLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
     fontWeight: '600',
   },
   seatPillBold: {
-    color: '#059669',
+    color: '#0E90E6',
     fontWeight: '900',
   },
   emptyState: {
@@ -765,14 +774,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusPillUpcoming: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#EBF5FF',
+    borderWidth: 1,
+    borderColor: '#D0E6FA',
   },
   statusPillCompleted: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
   },
   statusPillLargeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   overviewRouteTitle: {
     fontSize: 18,
@@ -835,7 +848,7 @@ const styles = StyleSheet.create({
   totalFareHighlight: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#059669',
+    color: '#0E90E6',
   },
   breakdownDivider: {
     height: 1,

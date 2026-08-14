@@ -13,15 +13,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { NotificationsView } from '../components/notifications-view';
+import { useAuth } from '../context/auth-context';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { userProfile, user, logout } = useAuth();
+
   const [selectedLanguage, setSelectedLanguage] = useState<'English' | 'සිංහල' | 'தமிழ்'>('English');
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isSavedRoutesModalOpen, setIsSavedRoutesModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(null);
+
+  const displayName = userProfile?.name || user?.displayName || 'John Doe';
+  const displayPhone = userProfile?.phone || user?.email || '+94 77 123 4567';
+
+  // Compute initials (e.g. John Doe -> JD)
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0].toUpperCase())
+    .slice(0, 2)
+    .join('') || 'JD';
 
   const faqs = [
     {
@@ -51,8 +65,12 @@ export default function ProfileScreen() {
         {
           text: 'Log Out',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Logged Out', 'You have been logged out successfully.');
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (e) {
+              console.log('Logout error', e);
+            }
           },
         },
       ]
@@ -77,12 +95,12 @@ export default function ProfileScreen() {
         {/* User Card matching screenshot */}
         <View style={styles.userSection}>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>JD</Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
 
           <View style={styles.userInfoCol}>
-            <Text style={styles.userName}>John Doe</Text>
-            <Text style={styles.userPhone}>+94 77 123 4567</Text>
+            <Text style={styles.userName}>{displayName}</Text>
+            <Text style={styles.userPhone}>{displayPhone}</Text>
           </View>
         </View>
 

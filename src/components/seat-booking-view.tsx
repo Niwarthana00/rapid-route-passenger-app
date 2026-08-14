@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { BusDetail } from './route-detail-view';
 import { BookingConfirmedView, BookingConfirmedDetails } from './booking-confirmed-view';
+import { useTabBar } from '../context/tab-bar-context';
 
 interface SeatBookingViewProps {
   bus: BusDetail;

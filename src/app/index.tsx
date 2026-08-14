@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { RouteDetailView } from '../components/route-detail-view';
 import { NotificationsView } from '../components/notifications-view';
 import { useTabBar } from '../context/tab-bar-context';
+import { useAuth } from '../context/auth-context';
 
 interface RouteItem {
   id: string;
@@ -103,6 +104,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 20);
   const { setTabBarVisible } = useTabBar();
+  const { userProfile, user } = useAuth();
+
+  const displayName = userProfile?.name || user?.displayName || 'JD';
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0].toUpperCase())
+    .slice(0, 2)
+    .join('') || 'JD';
 
   const [isSearching, setIsSearching] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -294,7 +304,7 @@ export default function HomeScreen() {
                   onPress={() => router.push('/profile')}
                   hitSlop={8}
                 >
-                  <Text style={styles.profileText}>JD</Text>
+                  <Text style={styles.profileText}>{initials}</Text>
                 </Pressable>
               </View>
             </View>

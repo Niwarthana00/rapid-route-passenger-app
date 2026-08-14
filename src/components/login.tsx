@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import * as WebBrowser from 'expo-web-browser';
+import { useAuth } from '../context/auth-context';
+
+WebBrowser.maybeCompleteAuthSession();
 
 interface LoginOverlayProps {
   onLoginSuccess: () => void;
@@ -29,27 +43,50 @@ const GoogleLogo = () => (
 );
 
 export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
+  const { loginWithEmail, signUpWithEmail, loginWithGoogleCredential } = useAuth();
+
   const [view, setView] = useState<'login' | 'signup'>('login');
   
   // Form fields
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email || !password) {
-      setError('Please fill in all fields');
+      setError('Please enter both email and password');
       return;
     }
     setError('');
-    onLoginSuccess();
+    setIsSubmitting(true);
+
+    try {
+      await loginWithEmail(email, password);
+      onLoginSuccess();
+    } catch (err: any) {
+      let msg = 'Failed to sign in. Please check your credentials.';
+      if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
+        msg = 'No account found with this email or incorrect password.';
+      } else if (err?.code === 'auth/wrong-password') {
+        msg = 'Incorrect password. Please try again.';
+      } else if (err?.code === 'auth/invalid-email') {
+        msg = 'Please enter a valid email address.';
+      } else if (err?.message) {
+        msg = err.message;
+      }
+      setError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSignUp = () => {
-    if (!email || !phone || !password || !confirmPassword) {
+  const handleSignUp = async () => {
+    if (!name || !email || !phone || !password || !confirmPassword) {
       setError('Please fill in all fields');
       return;
     }
@@ -57,19 +94,87 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
       setError('Passwords do not match');
       return;
     }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
     setError('');
-    onLoginSuccess();
+    setIsSubmitting(true);
+
+    try {
+      await signUpWithEmail(name, email, password, phone);
+      onLoginSuccess();
+    } catch (err: any) {
+      let msg = 'Failed to create account.';
+      if (err?.code === 'auth/email-already-in-use') {
+        msg = 'This email is already registered. Please log in instead.';
+      } else if (err?.code === 'auth/weak-password') {
+        msg = 'Password is too weak. Please use at least 6 characters.';
+      } else if (err?.code === 'auth/invalid-email') {
+        msg = 'Please enter a valid email address.';
+      } else if (err?.message) {
+        msg = err.message;
+      }
+      setError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     setError('');
-    onLoginSuccess();
+    setIsSubmitting(true);
+
+    try {
+      const clientId = '206964995281-ptvbp435s376lo8nu92mpkmc1b8h2mm7.apps.googleusercontent.com';
+      const redirectUrl = 'https://rapid-route-passenger.firebaseapp.com/__/auth/handler';
+      const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+      const authUrl =
+        `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${encodeURIComponent(clientId)}` +
+        `&response_type=id_token%20token` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&redirect_uri=${encodeURIComponent(redirectUrl)}` +
+        `&nonce=${encodeURIComponent(nonce)}` +
+        `&prompt=select_account`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+
+      if (result.type === 'success' && result.url) {
+        const urlHash = result.url.split('#')[1] || result.url.split('?')[1] || '';
+        const searchParams = new URLSearchParams(urlHash);
+        const idToken = searchParams.get('id_token');
+        const accessToken = searchParams.get('access_token');
+
+        if (idToken) {
+          await loginWithGoogleCredential(idToken);
+          onLoginSuccess();
+          return;
+        } else if (accessToken) {
+          const userResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          const googleUser = await userResp.json();
+          if (googleUser && googleUser.email) {
+            onLoginSuccess();
+            return;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.log('Google login feedback:', err?.message);
+      if (err?.message && !err.message.includes('dismiss') && !err.message.includes('cancel')) {
+        setError(err.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const toggleView = () => {
     setView(view === 'login' ? 'signup' : 'login');
     setError('');
-    // Clear passwords
     setPassword('');
     setConfirmPassword('');
   };
@@ -100,44 +205,68 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
                     placeholderTextColor="#8A95A5"
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    autoCorrect={false}
                     value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setEmail}
+                    editable={!isSubmitting}
                   />
                   <TextInput
                     style={styles.input}
                     placeholder="Password"
                     placeholderTextColor="#8A95A5"
                     secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
                     value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setPassword}
+                    editable={!isSubmitting}
                   />
                 </View>
 
                 {/* Continue Button */}
-                <Pressable onPress={handleLogin} style={styles.continueButton}>
-                  <Text style={styles.continueText}>Continue</Text>
+                <Pressable
+                  style={styles.continueButton}
+                  onPress={handleLogin}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.continueText}>Log in</Text>
+                  )}
                 </Pressable>
 
-                {/* Option Link */}
-                <Pressable onPress={() => {}} style={styles.linkButton}>
-                  <Text style={styles.linkText}>Login with OTP instead</Text>
+                {/* Forgot Password */}
+                <Pressable style={styles.linkButton} disabled={isSubmitting}>
+                  <Text style={styles.linkText}>Forgot password?</Text>
+                </Pressable>
+
+                {/* Divider */}
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Google Sign-in Button */}
+                <Pressable
+                  style={styles.googleButton}
+                  onPress={handleGoogleLogin}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#0E90E6" size="small" />
+                  ) : (
+                    <>
+                      <GoogleLogo />
+                      <Text style={styles.googleText}>Continue with Google</Text>
+                    </>
+                  )}
                 </Pressable>
               </>
             ) : (
-              // SIGN UP VIEW
+              // SIGNUP VIEW
               <>
                 {/* Title Section */}
-                <Text style={styles.title}>Create account</Text>
-                <Text style={styles.subtitle}>Fill in details to set up your profile</Text>
+                <Text style={styles.title}>Create an account</Text>
+                <Text style={styles.subtitle}>Sign up to start tracking buses and booking seats</Text>
 
                 {/* Error Message */}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -146,85 +275,97 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
                 <View style={styles.inputContainer}>
                   <TextInput
                     style={styles.input}
+                    placeholder="Full Name"
+                    placeholderTextColor="#8A95A5"
+                    value={name}
+                    onChangeText={setName}
+                    editable={!isSubmitting}
+                  />
+                  <TextInput
+                    style={styles.input}
                     placeholder="Email address"
                     placeholderTextColor="#8A95A5"
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    autoCorrect={false}
                     value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setEmail}
+                    editable={!isSubmitting}
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Phone number"
+                    placeholder="Phone number (+94 7X XXX XXXX)"
                     placeholderTextColor="#8A95A5"
                     keyboardType="phone-pad"
-                    autoCorrect={false}
                     value={phone}
-                    onChangeText={(text) => {
-                      setPhone(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setPhone}
+                    editable={!isSubmitting}
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Create password"
+                    placeholder="Password (at least 6 chars)"
                     placeholderTextColor="#8A95A5"
                     secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
                     value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setPassword}
+                    editable={!isSubmitting}
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Confirm password"
+                    placeholder="Confirm Password"
                     placeholderTextColor="#8A95A5"
                     secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
                     value={confirmPassword}
-                    onChangeText={(text) => {
-                      setConfirmPassword(text);
-                      if (error) setError('');
-                    }}
+                    onChangeText={setConfirmPassword}
+                    editable={!isSubmitting}
                   />
                 </View>
 
                 {/* Continue Button */}
-                <Pressable onPress={handleSignUp} style={styles.continueButton}>
-                  <Text style={styles.continueText}>Sign up</Text>
+                <Pressable
+                  style={styles.continueButton}
+                  onPress={handleSignUp}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.continueText}>Sign up</Text>
+                  )}
+                </Pressable>
+
+                {/* Divider */}
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Google Sign-in Button */}
+                <Pressable
+                  style={styles.googleButton}
+                  onPress={handleGoogleLogin}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#0E90E6" size="small" />
+                  ) : (
+                    <>
+                      <GoogleLogo />
+                      <Text style={styles.googleText}>Sign up with Google</Text>
+                    </>
+                  )}
                 </Pressable>
               </>
             )}
 
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Google Button */}
-            <Pressable onPress={handleGoogleLogin} style={styles.googleButton}>
-              <GoogleLogo />
-              <Text style={styles.googleText}>Continue with Google</Text>
-            </Pressable>
-
             {/* Toggle Link */}
             <View style={styles.signupContainer}>
               <Text style={styles.signupLabel}>
-                {view === 'login' ? "Don't have an account? " : "Already have an account? "}
+                {view === 'login' ? "Don't have an account? " : 'Already have an account? '}
               </Text>
-              <Pressable onPress={toggleView}>
+              <Pressable onPress={toggleView} disabled={isSubmitting}>
                 <Text style={styles.signupText}>
-                  {view === 'login' ? "Sign up" : "Log in"}
+                  {view === 'login' ? 'Sign up' : 'Log in'}
                 </Text>
               </Pressable>
             </View>
@@ -237,9 +378,14 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
 
 const styles = StyleSheet.create({
   overlayContainer: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#FAFBFD',
-    zIndex: 999, // Render above everything else
+    zIndex: 99999,
+    elevation: 99999,
   },
   scrollContent: {
     flexGrow: 1,
@@ -253,99 +399,96 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   title: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'left',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#8A95A5',
-    marginBottom: 32,
-    textAlign: 'left',
+    fontSize: 15,
+    color: '#64748B',
+    marginBottom: 24,
     lineHeight: 22,
+    textAlign: 'left',
   },
   errorText: {
     color: '#EF4444',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     marginBottom: 16,
-    textAlign: 'left',
+    backgroundColor: '#FEE2E2',
+    padding: 10,
+    borderRadius: 8,
   },
   inputContainer: {
-    gap: 16,
-    marginBottom: 24,
+    gap: 12,
+    marginBottom: 20,
   },
   input: {
-    height: 56,
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10, // Reduced curve to 10
-    paddingHorizontal: 18,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 16,
     fontSize: 15,
     color: '#111827',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
   },
   continueButton: {
-    backgroundColor: '#0E90E6', // Brand Blue color
-    borderRadius: 10, // Reduced curve to 10
-    height: 56,
+    backgroundColor: '#0E90E6',
+    borderRadius: 12,
+    height: 52,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     shadowColor: '#0E90E6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
   },
   continueText: {
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   linkButton: {
     alignSelf: 'center',
-    paddingVertical: 8,
-    marginBottom: 24,
+    paddingVertical: 6,
+    marginBottom: 20,
   },
   linkText: {
-    color: '#0E90E6', // Brand Blue color
-    fontSize: 15,
+    color: '#0E90E6',
+    fontSize: 14,
     fontWeight: '700',
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
   },
   dividerText: {
     marginHorizontal: 16,
-    color: '#8A95A5',
+    color: '#94A3B8',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   googleButton: {
     flexDirection: 'row',
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10, // Reduced curve to 10
-    height: 56,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 52,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
@@ -356,9 +499,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   googleText: {
-    color: '#374151',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#334155',
+    fontSize: 15,
+    fontWeight: '700',
   },
   signupContainer: {
     flexDirection: 'row',
@@ -366,13 +509,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signupLabel: {
-    color: '#8A95A5',
-    fontSize: 15,
+    color: '#64748B',
+    fontSize: 14,
     fontWeight: '500',
   },
   signupText: {
-    color: '#0E90E6', // Brand Blue color
-    fontSize: 15,
-    fontWeight: '700',
+    color: '#0E90E6',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

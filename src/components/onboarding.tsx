@@ -182,12 +182,13 @@ export function OnboardingOverlay({ onFinish }: OnboardingOverlayProps) {
 const styles = StyleSheet.create({
   overlayContainer: {
     position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
-    top: 0,
     bottom: 0,
-    backgroundColor: '#FAFBFD',
-    zIndex: 999, // Render above everything else
+    backgroundColor: '#ffffff',
+    zIndex: 99999,
+    elevation: 99999,
   },
   header: {
     height: 50,

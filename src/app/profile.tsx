@@ -33,7 +33,7 @@ export default function ProfileScreen() {
   const initials = displayName
     .split(' ')
     .filter(Boolean)
-    .map((n) => n[0].toUpperCase())
+    .map((n: string) => n[0].toUpperCase())
     .slice(0, 2)
     .join('') || 'JD';
 

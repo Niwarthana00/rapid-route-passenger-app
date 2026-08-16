@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
 import {
   StyleSheet,
   View,
@@ -34,92 +35,38 @@ export default function BookingsScreen() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<BookingTicketItem | null>(null);
 
-  // Sample upcoming and past bookings tailored to Sri Lanka Rapid Route
-  const upcomingBookings: BookingTicketItem[] = [
-    {
-      id: 'RR-92841',
-      routeNumber: '1-1',
-      from: 'Colombo',
-      to: 'Kandy',
-      busPlate: 'NA-1234',
-      isAC: true,
-      seat: '11',
-      seatNumbers: [11],
-      fare: 850,
-      date: 'Today, 13 Aug',
-      time: '08:30 AM',
-      boardingPoint: 'Colombo Fort Bus Stand, Bay 4',
-      droppingPoint: 'Kandy Goods Shed Terminal',
-      status: 'upcoming',
-    },
-    {
-      id: 'RR-81204',
-      routeNumber: '138',
-      from: 'Kottawa',
-      to: 'Pettah',
-      busPlate: 'NB-5678',
-      isAC: false,
-      seat: '04',
-      seatNumbers: [4],
-      fare: 140,
-      date: '14 May',
-      time: '17:15 PM',
-      boardingPoint: 'Kottawa Multi-Modal Transport Hub',
-      droppingPoint: 'Pettah Main Bus Stand',
-      status: 'upcoming',
-    },
-  ];
+  const [bookingsList, setBookingsList] = useState<BookingTicketItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const pastBookings: BookingTicketItem[] = [
-    {
-      id: 'RR-76512',
-      routeNumber: '138',
-      from: 'Kottawa',
-      to: 'Pettah',
-      busPlate: 'ND-9012',
-      isAC: false,
-      seat: '08',
-      seatNumbers: [8],
-      fare: 140,
-      date: '10 May',
-      time: '07:45 AM',
-      boardingPoint: 'Kottawa Stand',
-      droppingPoint: 'Pettah Stand',
-      status: 'completed',
-    },
-    {
-      id: 'RR-65430',
-      routeNumber: '120',
-      from: 'Horana',
-      to: 'Pettah',
-      busPlate: 'NC-3421',
-      isAC: false,
-      seat: '14',
-      seatNumbers: [14],
-      fare: 180,
-      date: '02 May',
-      time: '16:30 PM',
-      boardingPoint: 'Horana Bus Stand',
-      droppingPoint: 'Pettah Main Stand',
-      status: 'completed',
-    },
-    {
-      id: 'RR-54219',
-      routeNumber: '17',
-      from: 'Panadura',
-      to: 'Kandy',
-      busPlate: 'NA-4321',
-      isAC: true,
-      seat: '22',
-      seatNumbers: [22],
-      fare: 850,
-      date: '28 Apr',
-      time: '06:15 AM',
-      boardingPoint: 'Panadura Town Stand',
-      droppingPoint: 'Kandy Goods Shed',
-      status: 'completed',
-    },
-  ];
+  // Fetch all bookings from API
+  useEffect(() => {
+    async function loadBookings() {
+      setIsLoading(true);
+      const data = await api.getBookingHistory();
+      const formatted: BookingTicketItem[] = data.map((b: any) => ({
+        id: b.id || b.bookingId || `RR-${Math.floor(10000 + Math.random() * 90000)}`,
+        routeNumber: b.routeNumber || '138',
+        from: b.from || 'Colombo',
+        to: b.to || 'Destination',
+        busPlate: b.busPlate || 'NA-1234',
+        isAC: b.isAC !== undefined ? b.isAC : true,
+        seat: b.seat || b.seatNumbers?.join(', ') || '11',
+        seatNumbers: b.seatNumbers || [11],
+        fare: b.fare || b.totalFare || 850,
+        date: b.date || '15 Aug 2026',
+        time: b.time || '08:30 AM',
+        boardingPoint: b.boardingPoint || `${b.from} Bus Stand`,
+        droppingPoint: b.droppingPoint || `${b.to} Bus Stand`,
+        status: b.status || 'upcoming',
+      }));
+      setBookingsList(formatted);
+      setIsLoading(false);
+    }
+    loadBookings();
+  }, []);
+
+  const upcomingBookings = bookingsList.filter(b => b.status === 'upcoming');
+  const pastBookings = bookingsList.filter(b => b.status === 'completed' || b.status === 'cancelled');
 
   const displayedList = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
 

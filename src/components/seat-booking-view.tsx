@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
 import {
   StyleSheet,
   View,
@@ -7,6 +8,7 @@ import {
   ScrollView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,7 +29,10 @@ interface SeatBookingViewProps {
 interface SeatItem {
   number: number;
   label: string;
-  status: 'available' | 'occupied';
+  status: 'available' | 'occupied' | 'booked';
+  isOccupied?: boolean;
+  isBooked?: boolean;
+  occupied?: boolean;
 }
 
 export function SeatBookingView({
@@ -48,22 +53,45 @@ export function SeatBookingView({
   // State to hold confirmed booking after user confirms the dialog
   const [confirmedBooking, setConfirmedBooking] = useState<BookingConfirmedDetails | null>(null);
 
-  // Generate standard 2+2 bus seat arrangement (10 rows x 4 seats = 40 seats)
-  const [seats] = useState<SeatItem[]>(() => {
-    // Generate deterministic available/occupied seat distribution based on availableCount
-    const availableSeatIndices = new Set([4, 7, 11, 14, 18, 22, 25, 29, 33, 34, 37, 39].slice(0, availableCount));
-    
-    return Array.from({ length: totalSeats }, (_, i) => {
-      const seatNum = i + 1;
-      return {
-        number: seatNum,
-        label: `${seatNum}`,
-        status: availableSeatIndices.has(seatNum) ? 'available' : 'occupied',
-      };
-    });
-  });
+  const [seats, setSeats] = useState<SeatItem[]>([]);
+  const [isLoadingSeats, setIsLoadingSeats] = useState(true);
+  const [selectedSeatNumbers, setSelectedSeatNumbers] = useState<number[]>([]);
 
-  const [selectedSeatNumbers, setSelectedSeatNumbers] = useState<number[]>([11]);
+  // Fetch real-time seat configuration from backend API
+  useEffect(() => {
+    async function loadSeats() {
+      setIsLoadingSeats(true);
+      try {
+        const data = await api.getBusSeats(bus.id);
+        const occupiedList = data && Array.isArray(data.occupiedSeats) ? data.occupiedSeats : [];
+        const occupiedSet = new Set(occupiedList);
+        
+        const seatList: SeatItem[] = Array.from({ length: totalSeats }, (_, i) => {
+          const seatNum = i + 1;
+          return {
+            number: seatNum,
+            label: `${seatNum}`,
+            status: occupiedSet.has(seatNum) ? 'occupied' : 'available',
+          };
+        });
+        setSeats(seatList);
+      } catch (err) {
+        console.warn('[SeatBooking] Failed to fetch seat configuration, using all available fallback:', err);
+        const seatList: SeatItem[] = Array.from({ length: totalSeats }, (_, i) => {
+          const seatNum = i + 1;
+          return {
+            number: seatNum,
+            label: `${seatNum}`,
+            status: 'available',
+          };
+        });
+        setSeats(seatList);
+      } finally {
+        setIsLoadingSeats(false);
+      }
+    }
+    loadSeats();
+  }, [bus.id]);
 
   const toggleSeat = (seat: SeatItem) => {
     if (seat.status === 'occupied') return;
@@ -99,8 +127,8 @@ export function SeatBookingView({
         {
           text: 'Yes, Confirm',
           onPress: () => {
-            const newBooking: BookingConfirmedDetails = {
-              bookingId: `RR-${Math.floor(10000 + Math.random() * 90000)}`,
+            // POST booking request to backend API
+            api.createBooking({
               routeNumber,
               from,
               to,
@@ -108,14 +136,26 @@ export function SeatBookingView({
               isAC: bus.isAC,
               seatNumbers: selectedSeatNumbers,
               totalFare,
-              date: '13 Aug 2026',
-              time: '08:30 AM',
-            };
+              busId: bus.id,
+            }).then((bookingResult) => {
+              const newBooking: BookingConfirmedDetails = {
+                bookingId: bookingResult.bookingId,
+                routeNumber: bookingResult.routeNumber,
+                from: bookingResult.from,
+                to: bookingResult.to,
+                busPlate: bookingResult.busPlate,
+                isAC: bookingResult.isAC,
+                seatNumbers: bookingResult.seatNumbers,
+                totalFare: bookingResult.totalFare,
+                date: bookingResult.date,
+                time: bookingResult.time,
+              };
 
-            setConfirmedBooking(newBooking);
-            if (onConfirmBooking) {
-              onConfirmBooking(selectedSeatNumbers, totalFare);
-            }
+              setConfirmedBooking(newBooking);
+              if (onConfirmBooking) {
+                onConfirmBooking(selectedSeatNumbers, totalFare);
+              }
+            });
           },
         },
       ]
@@ -123,6 +163,29 @@ export function SeatBookingView({
   };
 
   const { setTabBarVisible } = useTabBar();
+
+  // Render loading screen if seats are loading or not populated yet
+  if (isLoadingSeats || seats.length === 0) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: topInset + (Platform.OS === 'ios' ? 8 : 12) }]}>
+          <Pressable onPress={onBack} style={styles.backButton} hitSlop={10}>
+            <Ionicons name="chevron-back" size={24} color="#111827" />
+          </Pressable>
+          <View style={styles.headerTitleCol}>
+            <Text style={styles.headerTitle}>Select Seat</Text>
+            <Text style={styles.headerSubtitle}>
+              {bus.plateNumber} • {from} - {to}
+            </Text>
+          </View>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFBFD' }}>
+          <ActivityIndicator size="large" color="#0E90E6" />
+          <Text style={{ marginTop: 12, fontSize: 14, color: '#64748B', fontWeight: '600' }}>Loading seat layout...</Text>
+        </View>
+      </View>
+    );
+  }
 
   // Render Booking Confirmed Screen when confirmed
   if (confirmedBooking) {
@@ -284,11 +347,17 @@ function SeatButton({
   isSelected,
   onPress,
 }: {
-  seat: SeatItem;
+  seat: SeatItem | undefined;
   isSelected: boolean;
   onPress: () => void;
 }) {
-  const isOccupied = seat.status === 'occupied';
+  if (!seat) return null;
+  const isOccupied = 
+    seat.status === 'occupied' || 
+    seat.status === 'booked' || 
+    seat.isOccupied === true || 
+    seat.isBooked === true || 
+    seat.occupied === true;
 
   return (
     <Pressable

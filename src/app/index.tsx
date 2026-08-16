@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Text, TextInput, Pressable, Platform, ScrollView, ActivityIndicator, Animated, PanResponder, Dimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { RouteDetailView } from '../components/route-detail-view';
 import { NotificationsView } from '../components/notifications-view';
 import { useTabBar } from '../context/tab-bar-context';
 import { useAuth } from '../context/auth-context';
+import { api } from '../services/api';
 
 interface RouteItem {
   id: string;
@@ -17,16 +18,7 @@ interface RouteItem {
   activeBuses: number;
 }
 
-const SAMPLE_ROUTES: RouteItem[] = [
-  { id: '1', routeNumber: '1-1', from: 'Colombo', to: 'Kandy', activeBuses: 3 },
-  { id: '2', routeNumber: '17', from: 'Panadura', to: 'Kandy', activeBuses: 3 },
-  { id: '3', routeNumber: '15', from: 'Colombo', to: 'Anuradhapura', activeBuses: 2 },
-  { id: '4', routeNumber: '48', from: 'Colombo', to: 'Kaduruwela', activeBuses: 1 },
-  { id: '5', routeNumber: '138', from: 'Colombo Fort', to: 'Kottawa', activeBuses: 8 },
-  { id: '6', routeNumber: '120', from: 'Pettah', to: 'Horana', activeBuses: 4 },
-  { id: '7', routeNumber: '100', from: 'Panadura', to: 'Pettah', activeBuses: 6 },
-  { id: '8', routeNumber: '177', from: 'Kaduwela', to: 'Kollupitiya', activeBuses: 3 },
-];
+// SAMPLE_ROUTES has been removed in favor of live backend API queries
 
 // Mock Map Component for Home Screen
 const VectorMapBackground = () => (
@@ -110,18 +102,87 @@ export default function HomeScreen() {
   const initials = displayName
     .split(' ')
     .filter(Boolean)
-    .map((n) => n[0].toUpperCase())
+    .map((n: string) => n[0].toUpperCase())
     .slice(0, 2)
     .join('') || 'JD';
 
   const [isSearching, setIsSearching] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Draggable Bottom Sheet Configurations
+  const screenHeight = Dimensions.get('window').height;
+  const collapsedHeight = screenHeight * 0.40;
+  const expandedHeight = screenHeight * 0.82;
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const sheetHeight = useRef(new Animated.Value(collapsedHeight)).current;
+  const lastHeight = useRef(collapsedHeight);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (e, gestureState) => {
+        let nextHeight = lastHeight.current - gestureState.dy;
+        if (nextHeight < collapsedHeight) {
+          nextHeight = collapsedHeight;
+        } else if (nextHeight > expandedHeight) {
+          nextHeight = expandedHeight;
+        }
+        sheetHeight.setValue(nextHeight);
+      },
+      onPanResponderRelease: (e, gestureState) => {
+        const finalHeight = lastHeight.current - gestureState.dy;
+        const threshold = (collapsedHeight + expandedHeight) / 2;
+        let targetHeight = collapsedHeight;
+        
+        if (finalHeight > threshold) {
+          targetHeight = expandedHeight;
+        }
+        
+        Animated.spring(sheetHeight, {
+          toValue: targetHeight,
+          useNativeDriver: false,
+          friction: 8,
+          tension: 40,
+        }).start(() => {
+          lastHeight.current = targetHeight;
+          setSheetExpanded(targetHeight === expandedHeight);
+        });
+      },
+    })
+  ).current;
   const [selectedRoute, setSelectedRoute] = useState<{
+    id?: string;
     routeNumber: string;
     from: string;
     to: string;
   } | null>(null);
+
+  const [routes, setRoutes] = useState<RouteItem[]>([]);
+  const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
+
+  // Fetch routes from API with debouncing to prevent excessive queries
+  useEffect(() => {
+    let active = true;
+    async function loadRoutes() {
+      setIsLoadingRoutes(true);
+      const data = await api.getRoutes(searchQuery);
+      if (active) {
+        setRoutes(data);
+        setIsLoadingRoutes(false);
+      }
+    }
+
+    const delayDebounceFn = setTimeout(() => {
+      loadRoutes();
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(delayDebounceFn);
+    };
+  }, [searchQuery]);
 
   // Automatically hide tab bar when searching, viewing route detail or notifications
   useEffect(() => {
@@ -132,18 +193,9 @@ export default function HomeScreen() {
     }
   }, [isSearching, selectedRoute, isNotificationsOpen, setTabBarVisible]);
 
-  const filteredRoutes = SAMPLE_ROUTES.filter((route) => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      route.routeNumber.toLowerCase().includes(query) ||
-      route.from.toLowerCase().includes(query) ||
-      route.to.toLowerCase().includes(query)
-    );
-  });
-
   const handleSelectRoute = (route: RouteItem) => {
     setSelectedRoute({
+      id: route.id,
       routeNumber: route.routeNumber,
       from: route.from,
       to: route.to,
@@ -151,11 +203,12 @@ export default function HomeScreen() {
     setIsSearching(false);
   };
 
-  const handleSelectNearbyBus = (routeNumber: string, from: string, to: string) => {
+  const handleSelectNearbyBus = (route: any) => {
     setSelectedRoute({
-      routeNumber,
-      from,
-      to,
+      id: route.id,
+      routeNumber: route.routeNumber,
+      from: route.from,
+      to: route.to,
     });
   };
 
@@ -172,9 +225,7 @@ export default function HomeScreen() {
   if (selectedRoute) {
     return (
       <RouteDetailView
-        routeNumber={selectedRoute.routeNumber}
-        from={selectedRoute.from}
-        to={selectedRoute.to}
+        route={selectedRoute}
         onBack={() => {
           setSelectedRoute(null);
           setTabBarVisible(true);
@@ -226,10 +277,12 @@ export default function HomeScreen() {
           >
             <Text style={styles.searchSectionTitle}>Matching Routes</Text>
 
-            {filteredRoutes.length > 0 ? (
+            {isLoadingRoutes ? (
+              <ActivityIndicator size="large" color="#0E90E6" style={{ marginVertical: 30 }} />
+            ) : routes.length > 0 ? (
               <View style={styles.routesCardContainer}>
-                {filteredRoutes.map((route, index) => {
-                  const isLast = index === filteredRoutes.length - 1;
+                {routes.map((route, index) => {
+                  const isLast = index === routes.length - 1;
                   return (
                     <Pressable
                       key={route.id}
@@ -244,13 +297,15 @@ export default function HomeScreen() {
                       {/* Route Info */}
                       <View style={styles.routeInfoCol}>
                         <View style={styles.routeDestinationRow}>
-                          <Text style={styles.routeFromText}>{route.from}</Text>
+                          <Text style={styles.routeFromText} numberOfLines={1} ellipsizeMode="tail">{route.from}</Text>
                           <Ionicons name="arrow-forward" size={14} color="#64748B" style={styles.routeArrow} />
-                          <Text style={styles.routeToText}>{route.to}</Text>
+                          <Text style={styles.routeToText} numberOfLines={1} ellipsizeMode="tail">{route.to}</Text>
                         </View>
                         <View style={styles.activeBusesRow}>
-                          <Ionicons name="bus" size={13} color="#0E90E6" />
-                          <Text style={styles.activeBusesText}>{route.activeBuses} active buses</Text>
+                          <Ionicons name="bus" size={13} color={route.activeBuses > 0 ? '#0E90E6' : '#94A3B8'} />
+                          <Text style={[styles.activeBusesText, route.activeBuses === 0 && { color: '#94A3B8' }]}>
+                            {route.activeBuses > 0 ? `${route.activeBuses} active buses` : 'No active buses'}
+                          </Text>
                         </View>
                       </View>
 
@@ -335,84 +390,64 @@ export default function HomeScreen() {
           </View>
 
           {/* Bottom Sheet Details */}
-          <View style={styles.bottomSheet}>
-            {/* Handle Indicator */}
-            <View style={styles.handleContainer}>
-              <View style={styles.sheetHandle} />
+          <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
+            {/* Header Grabbing Area */}
+            <View {...panResponder.panHandlers} style={styles.sheetHeaderGrabArea}>
+              {/* Handle Indicator */}
+              <View style={styles.handleContainer}>
+                <View style={styles.sheetHandle} />
+              </View>
+
+              <Text style={styles.sheetTitle}>Nearby Buses</Text>
             </View>
 
-            <Text style={styles.sheetTitle}>Nearby Buses</Text>
-
             <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
-              {/* Bus Card 138 */}
-              <Pressable
-                style={styles.busCard}
-                onPress={() => handleSelectNearbyBus('138', 'Colombo Fort', 'Kottawa')}
-              >
-                <View style={styles.busInfo}>
-                  <Text style={styles.busRouteTitle}>138 Kottawa - Pettah</Text>
-                  <Text style={styles.busETA}>
-                    ETA: <Text style={styles.busETABold}>2 min</Text>
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, styles.badgeAvailable]}>
-                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
-                  <Text style={[styles.badgeText, styles.textAvailable]}>12 left</Text>
-                </View>
-              </Pressable>
-
-              {/* Bus Card 1-1 Colombo - Kandy */}
-              <Pressable
-                style={styles.busCard}
-                onPress={() => handleSelectNearbyBus('1-1', 'Colombo', 'Kandy')}
-              >
-                <View style={styles.busInfo}>
-                  <Text style={styles.busRouteTitle}>1-1 Colombo - Kandy</Text>
-                  <Text style={styles.busETA}>
-                    ETA: <Text style={styles.busETABold}>4 min</Text>
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, styles.badgeAvailable]}>
-                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
-                  <Text style={[styles.badgeText, styles.textAvailable]}>12 left</Text>
-                </View>
-              </Pressable>
-
-              {/* Bus Card 120 */}
-              <Pressable
-                style={styles.busCard}
-                onPress={() => handleSelectNearbyBus('120', 'Pettah', 'Horana')}
-              >
-                <View style={styles.busInfo}>
-                  <Text style={styles.busRouteTitle}>120 Horana - Pettah</Text>
-                  <Text style={styles.busETA}>
-                    ETA: <Text style={styles.busETABold}>5 min</Text>
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, styles.badgeAvailable]}>
-                  <Ionicons name="people" size={14} color="#0E90E6" style={styles.badgeIcon} />
-                  <Text style={[styles.badgeText, styles.textAvailable]}>4 left</Text>
-                </View>
-              </Pressable>
-
-              {/* Bus Card 17 */}
-              <Pressable
-                style={styles.busCard}
-                onPress={() => handleSelectNearbyBus('17', 'Panadura', 'Kandy')}
-              >
-                <View style={styles.busInfo}>
-                  <Text style={styles.busRouteTitle}>17 Panadura - Kandy</Text>
-                  <Text style={styles.busETA}>
-                    ETA: <Text style={styles.busETABold}>8 min</Text>
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, styles.badgeFull]}>
-                  <Ionicons name="people" size={14} color="#EF4444" style={styles.badgeIcon} />
-                  <Text style={[styles.badgeText, styles.textFull]}>Full</Text>
-                </View>
-              </Pressable>
+              {isLoadingRoutes ? (
+                <ActivityIndicator size="large" color="#0E90E6" style={{ marginVertical: 30 }} />
+              ) : routes.length > 0 ? (
+                routes.map((route) => {
+                  return (
+                    <Pressable
+                      key={route.id}
+                      style={styles.busCard}
+                      onPress={() => handleSelectNearbyBus(route)}
+                    >
+                      <View style={styles.busInfo}>
+                        {/* Header: Route badge and active count */}
+                        <View style={styles.busCardHeader}>
+                          <View style={styles.busRouteBadge}>
+                            <Text style={styles.busRouteBadgeText}>{route.routeNumber}</Text>
+                          </View>
+                          <View style={styles.activeBusesCountRow}>
+                            <Ionicons name="bus" size={13} color={route.activeBuses > 0 ? '#0E90E6' : '#94A3B8'} />
+                            <Text style={[styles.activeBusesCountText, route.activeBuses === 0 && { color: '#94A3B8' }]}>
+                              {route.activeBuses > 0 ? `${route.activeBuses} Active` : 'No Active'}
+                            </Text>
+                          </View>
+                        </View>
+                        
+                        {/* Destinations */}
+                        <View style={styles.busCardRouteCol}>
+                          <Text style={styles.busRouteStationText}>{route.from}</Text>
+                          <View style={styles.toLabelRow}>
+                            <View style={styles.toLine} />
+                            <Text style={styles.toLabelText}>to</Text>
+                            <View style={styles.toLine} />
+                          </View>
+                          <Text style={styles.busRouteStationText}>{route.to}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.chevronWrapper}>
+                        <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                      </View>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <Text style={styles.loadingText}>No routes found</Text>
+              )}
             </ScrollView>
-          </View>
+          </Animated.View>
         </>
       )}
     </View>
@@ -592,7 +627,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '48%',
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -604,6 +638,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 5,
+  },
+  sheetHeaderGrabArea: {
+    width: '100%',
+    backgroundColor: '#ffffff',
   },
   handleContainer: {
     alignItems: 'center',
@@ -644,20 +682,67 @@ const styles = StyleSheet.create({
   busInfo: {
     flexDirection: 'column',
     gap: 4,
+    flex: 1,
   },
-  busRouteTitle: {
-    fontSize: 16,
+  busCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  busRouteBadge: {
+    backgroundColor: '#EBF5FF',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  busRouteBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0E90E6',
+  },
+  activeBusesCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  activeBusesCountText: {
+    fontSize: 12,
+    color: '#0E90E6',
+    fontWeight: '700',
+  },
+  busCardRouteCol: {
+    flexDirection: 'column',
+    gap: 4,
+    flex: 1,
+  },
+  toLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 2,
+    width: '100%',
+  },
+  toLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  toLabelText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+    textTransform: 'lowercase',
+  },
+  busRouteStationText: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  busETA: {
-    fontSize: 13,
-    color: '#8A95A5',
-    fontWeight: '500',
-  },
-  busETABold: {
-    fontWeight: '700',
-    color: '#111827',
+  chevronWrapper: {
+    marginLeft: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   statusBadge: {
     flexDirection: 'row',
@@ -666,6 +751,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
     gap: 4,
+    marginLeft: 12,
   },
   badgeIcon: {
     marginRight: 2,
@@ -798,13 +884,14 @@ const styles = StyleSheet.create({
   routeDestinationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: 6,
+    flex: 1,
   },
   routeFromText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#111827',
+    flex: 1,
   },
   routeArrow: {
     marginTop: 1,
@@ -813,6 +900,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#111827',
+    flex: 1,
   },
   activeBusesRow: {
     flexDirection: 'row',
@@ -842,5 +930,12 @@ const styles = StyleSheet.create({
     color: '#8A95A5',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#8A95A5',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontWeight: '600',
   },
 });

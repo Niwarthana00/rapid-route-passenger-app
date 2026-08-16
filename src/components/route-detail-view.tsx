@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { api } from '../services/api';
 import {
   StyleSheet,
   View,
@@ -8,6 +9,9 @@ import {
   Platform,
   Alert,
   DimensionValue,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,10 +33,12 @@ export interface BusDetail {
 }
 
 export interface RouteDetailProps {
-  routeNumber: string;
-  from: string;
-  to: string;
-  busesCount?: number;
+  route: {
+    id?: string;
+    routeNumber: string;
+    from: string;
+    to: string;
+  };
   onBack: () => void;
   onBookSeat?: (bus: BusDetail) => void;
 }
@@ -99,11 +105,11 @@ const RouteMapBackground = ({
     </View>
 
     {/* Dynamic Bus Markers on Map */}
-    {buses.map((bus) => {
+    {Array.isArray(buses) && buses.map((bus, index) => {
       const isSelected = bus.id === selectedBusId;
       return (
         <Pressable
-          key={bus.id}
+          key={`${bus.id}-${index}`}
           style={[
             styles.busMarker,
             {
@@ -132,56 +138,82 @@ const RouteMapBackground = ({
 );
 
 export function RouteDetailView({
-  routeNumber,
-  from,
-  to,
+  route,
   onBack,
 }: RouteDetailProps) {
+  const { routeNumber, from, to } = route;
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 20);
 
-  // Active buses list on this route
-  const [buses] = useState<BusDetail[]>([
-    {
-      id: '1',
-      plateNumber: 'NA-1234',
-      eta: '4 min away',
-      seatsLeft: 12,
-      totalSeats: 40,
-      isAC: true,
-      fare: 850,
-      currentStop: 'Kadawatha',
-      markerTop: '25%',
-      markerLeft: '42%',
-      angle: 15,
-    },
-    {
-      id: '2',
-      plateNumber: 'NB-5678',
-      eta: '15 min away',
-      seatsLeft: 'Full',
-      totalSeats: 40,
-      isAC: false,
-      fare: 450,
-      currentStop: 'Nittambuwa',
-      markerTop: '48%',
-      markerLeft: '60%',
-      angle: 40,
-    },
-    {
-      id: '3',
-      plateNumber: 'ND-9012',
-      eta: '32 min away',
-      seatsLeft: 24,
-      totalSeats: 40,
-      isAC: true,
-      fare: 850,
-      currentStop: 'Warakapola',
-      markerTop: '66%',
-      markerLeft: '34%',
-      angle: -25,
-    },
-  ]);
+  const [buses, setBuses] = useState<BusDetail[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Draggable Bottom Sheet Configurations
+  const screenHeight = Dimensions.get('window').height;
+  const collapsedHeight = screenHeight * 0.40;
+  const expandedHeight = screenHeight * 0.82;
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const sheetHeight = useRef(new Animated.Value(collapsedHeight)).current;
+  const lastHeight = useRef(collapsedHeight);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (e, gestureState) => {
+        let nextHeight = lastHeight.current - gestureState.dy;
+        if (nextHeight < collapsedHeight) {
+          nextHeight = collapsedHeight;
+        } else if (nextHeight > expandedHeight) {
+          nextHeight = expandedHeight;
+        }
+        sheetHeight.setValue(nextHeight);
+      },
+      onPanResponderRelease: (e, gestureState) => {
+        const finalHeight = lastHeight.current - gestureState.dy;
+        const threshold = (collapsedHeight + expandedHeight) / 2;
+        let targetHeight = collapsedHeight;
+        
+        if (finalHeight > threshold) {
+          targetHeight = expandedHeight;
+        }
+        
+        Animated.spring(sheetHeight, {
+          toValue: targetHeight,
+          useNativeDriver: false,
+          friction: 8,
+          tension: 40,
+        }).start(() => {
+          lastHeight.current = targetHeight;
+          setSheetExpanded(targetHeight === expandedHeight);
+        });
+      },
+    })
+  ).current;
+
+  // Fetch active buses on this route from API
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchBuses() {
+      setIsLoading(true);
+      try {
+        const data = await api.getActiveBuses(route.id || route.routeNumber);
+        if (isMounted) {
+          setBuses(data || []);
+          if (data && data.length > 0) {
+            setSelectedBusId(data[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch buses:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    fetchBuses();
+    return () => { isMounted = false; };
+  }, [route.id, route.routeNumber]);
 
   const [selectedBusId, setSelectedBusId] = useState<string>('1');
   const [expandedBusId, setExpandedBusId] = useState<string | null>(null);
@@ -227,7 +259,7 @@ export function RouteDetailView({
         </Pressable>
 
         <View style={styles.headerTitleCol}>
-          <Text style={styles.headerTitleText} numberOfLines={1}>
+          <Text style={styles.headerTitleText}>
             {routeNumber} {from} - {to}
           </Text>
           <Text style={styles.headerSubText}>{buses.length} buses active on route</Text>
@@ -235,29 +267,34 @@ export function RouteDetailView({
       </View>
 
       {/* Bottom Sheet for Active Buses */}
-      <View style={styles.bottomSheet}>
-        <View style={styles.handleContainer}>
-          <View style={styles.sheetHandle} />
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
+        {/* Header Grabbing Area */}
+        <View {...panResponder.panHandlers} style={styles.sheetHeaderGrabArea}>
+          <View style={styles.handleContainer}>
+            <View style={styles.sheetHandle} />
+          </View>
         </View>
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {buses.map((bus) => {
-            const isFull = bus.seatsLeft === 'Full';
-            const isExpanded = expandedBusId === bus.id;
-            const isSelected = selectedBusId === bus.id;
+          {isLoading ? (
+            <Text style={styles.loadingText}>Loading buses on route...</Text>
+          ) : Array.isArray(buses) && buses.length > 0 ? (
+            buses.map((bus, index) => {
+              const isFull = bus.seatsLeft === 'Full';
+              const isExpanded = expandedBusId === bus.id;
+              const isSelected = selectedBusId === bus.id;
 
-            return (
-              <View
-                key={bus.id}
-                style={[
-                  styles.busCard,
-                  isSelected && styles.busCardSelected,
-                ]}
-              >
-                {/* Row 1: Bus Plate + AC Badge | Fare & Expand Button */}
+              return (
+                <View
+                  key={`${bus.id}-${index}`}
+                  style={[
+                    styles.busCard,
+                    isSelected && styles.busCardSelected,
+                  ]}
+                >
                 <View style={styles.cardHeaderRow}>
                   {/* Left: Plate + AC Badge */}
                   <View style={styles.plateGroup}>
@@ -301,7 +338,7 @@ export function RouteDetailView({
                   <View style={styles.locationEtaCol}>
                     <View style={styles.locationSubRow}>
                       <Ionicons name="location-sharp" size={13} color="#0E90E6" />
-                      <Text style={styles.locationText} numberOfLines={1}>
+                      <Text style={styles.locationText}>
                         {bus.currentStop}
                       </Text>
                     </View>
@@ -394,10 +431,13 @@ export function RouteDetailView({
                   </View>
                 )}
               </View>
-            );
-          })}
+              );
+            })
+          ) : (
+            <Text style={styles.loadingText}>No active buses on this route</Text>
+          )}
         </ScrollView>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -545,7 +585,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '48%',
     backgroundColor: '#FAFBFD',
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
@@ -560,6 +599,10 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: '#EEF2F6',
+  },
+  sheetHeaderGrabArea: {
+    width: '100%',
+    backgroundColor: '#FAFBFD',
   },
   handleContainer: {
     alignItems: 'center',
@@ -672,6 +715,8 @@ const styles = StyleSheet.create({
   locationEtaCol: {
     flexDirection: 'column',
     gap: 3,
+    flex: 1,
+    marginRight: 12,
   },
   locationSubRow: {
     flexDirection: 'row',
@@ -682,6 +727,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#334155',
+    flex: 1,
   },
   etaSubRow: {
     flexDirection: 'row',
@@ -804,5 +850,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#0E90E6',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#8A95A5',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontWeight: '600',
   },
 });

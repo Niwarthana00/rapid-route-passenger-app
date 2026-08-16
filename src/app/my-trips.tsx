@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
 import {
   StyleSheet,
   View,
@@ -9,6 +10,7 @@ import {
   Alert,
   Share,
   Vibration,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,30 +24,83 @@ interface HaltStep {
   isAlarmHalt?: boolean;
 }
 
+const ROUTE_HALTS: Record<string, string[]> = {
+  '1-1': ['Colombo Fort Terminal', 'Peliyagoda Interchange', 'Kelaniya Halt', 'Kadawatha Bus Stand', 'Nittambuwa Town', 'Pasyala Junction', 'Warakapola Station', 'Kegalle Main Stand', 'Mawanella Town', 'Kandy Goods Shed Terminal'],
+  '138': ['Pettah Main Stand', 'Colombo Fort', 'Torrington', 'Nugegoda Junction', 'Maharagama Multi-Modal', 'Pannipitiya', 'Kottawa Interchange'],
+  '120': ['Pettah Main Stand', 'Nugegoda Stand', 'Boralesgamuwa', 'Piliyandala Town', 'Kahathuduwa', 'Pokunuwita', 'Horana Bus Stand'],
+  '17': ['Panadura Town Stand', 'Moratuwa', 'Katubedda', 'Ratmalana', 'Mount Lavinia', 'Colombo Fort', 'Kegalle', 'Kandy Goods Shed'],
+};
+
 export default function MyTripsScreen() {
   const [isAlarmEnabled, setIsAlarmEnabled] = useState(true);
-  const [selectedDropOffHalt] = useState('Kadawatha');
+  const [activeBooking, setActiveBooking] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const journeyHalts: HaltStep[] = [
-    { id: '1', name: 'Colombo Fort Terminal', time: '08:30 AM', status: 'passed' },
-    { id: '2', name: 'Peliyagoda Interchange', time: '08:42 AM', status: 'passed' },
-    { id: '3', name: 'Kelaniya Halt', time: '08:50 AM', status: 'passed' },
-    { id: '4', name: 'Kadawatha Bus Stand', time: '09:05 AM', status: 'upcoming', distance: '1 stop away (2 min)', isAlarmHalt: true },
-    { id: '5', name: 'Nittambuwa Town', time: '09:22 AM', status: 'upcoming', distance: '12 km (18 min)' },
-    { id: '6', name: 'Pasyala Junction', time: '09:35 AM', status: 'upcoming', distance: '22 km' },
-    { id: '7', name: 'Warakapola Station', time: '09:50 AM', status: 'upcoming', distance: '36 km' },
-    { id: '8', name: 'Kegalle Main Stand', time: '10:15 AM', status: 'upcoming', distance: '55 km' },
-    { id: '9', name: 'Mawanella Town', time: '10:30 AM', status: 'upcoming', distance: '70 km' },
-    { id: '10', name: 'Kandy Goods Shed Terminal', time: '10:55 AM', status: 'upcoming', distance: '115 km' },
-  ];
+  // Fetch active bookings on load
+  useEffect(() => {
+    async function loadActiveBooking() {
+      setIsLoading(true);
+      const data = await api.getBookingHistory();
+      const upcoming = data.find((b: any) => b.status === 'upcoming');
+      setActiveBooking(upcoming);
+      setIsLoading(false);
+    }
+    loadActiveBooking();
+  }, []);
+
+  const selectedDropOffHalt = activeBooking ? activeBooking.to : 'Destination';
+
+  // Generate dynamic halts matching the user's booked route number
+  const haltsList = activeBooking ? (ROUTE_HALTS[activeBooking.routeNumber] || ROUTE_HALTS['138']) : [];
+  const journeyHalts: HaltStep[] = haltsList.map((name, index) => {
+    const isPassed = index < 3;
+    const isCurrent = index === 3;
+    return {
+      id: String(index + 1),
+      name,
+      time: index === 0 && activeBooking ? activeBooking.time : `${8 + index}:10 AM`,
+      status: isPassed ? 'passed' : isCurrent ? 'current' : 'upcoming',
+      isAlarmHalt: isCurrent,
+      distance: isCurrent ? '1 stop away (2 min)' : undefined,
+    };
+  });
 
   // Check if bus is 1 halt before destination
-  const isOneHaltBefore = true;
+  const isOneHaltBefore = activeBooking !== null;
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#0E90E6" />
+          <Text style={styles.emptyTitle}>Loading live journey...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!activeBooking) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Live Journey</Text>
+        </View>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="bus-outline" size={64} color="#8A95A5" style={{ marginBottom: 12 }} />
+          <Text style={styles.emptyTitle}>No Active Journey</Text>
+          <Text style={styles.emptySubtitle}>
+            Once you book a seat, your live tracking and journey progress will appear here in real-time.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleShareTrip = async () => {
     try {
       await Share.share({
-        message: '🚍 I am traveling on Rapid Route Bus NA-1234 (1-1 Colombo - Kandy). Next stop: Kadawatha (1 stop away).',
+        message: `🚍 I am traveling on Rapid Route Bus ${activeBooking.busPlate} (${activeBooking.routeNumber} ${activeBooking.routeName || `${activeBooking.from} - ${activeBooking.to}`}). Next stop: ${selectedDropOffHalt}.`,
       });
     } catch (error) {
       Alert.alert('Share Trip', 'Unable to share live trip link.');
@@ -55,7 +110,7 @@ export default function MyTripsScreen() {
   const handleConductorHelp = () => {
     Alert.alert(
       '👨‍✈️ Conductor Assistance',
-      `Conductor on Bus NA-1234 has been notified of your drop-off request at ${selectedDropOffHalt}.`,
+      `Conductor on Bus ${activeBooking.busPlate} has been notified of your drop-off request at ${selectedDropOffHalt}.`,
       [{ text: 'OK' }]
     );
   };
@@ -86,14 +141,14 @@ export default function MyTripsScreen() {
         <View style={styles.activeBusCard}>
           <View style={styles.busMetaRow}>
             <View style={styles.routePill}>
-              <Text style={styles.routePillText}>1-1</Text>
+              <Text style={styles.routePillText}>{activeBooking.routeNumber}</Text>
             </View>
             <View style={styles.busInfoCol}>
-              <Text style={styles.routeTitle}>Colombo &rarr; Kandy</Text>
-              <Text style={styles.busPlateSubtitle}>Bus: NA-1234 • Luxury A/C</Text>
+              <Text style={styles.routeTitle}>{activeBooking.routeName || `${activeBooking.from} → ${activeBooking.to}`}</Text>
+              <Text style={styles.busPlateSubtitle}>Bus: {activeBooking.busPlate} • {activeBooking.isAC ? 'Luxury A/C' : 'Standard CTB'}</Text>
             </View>
             <View style={styles.seatBadge}>
-              <Text style={styles.seatBadgeText}>Seat 11</Text>
+              <Text style={styles.seatBadgeText}>Seat {activeBooking.seatNumbers?.join(', ') || activeBooking.seat || '11'}</Text>
             </View>
           </View>
 
@@ -701,5 +756,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#059669',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    backgroundColor: '#FAFBFD',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    marginTop: 8,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#8A95A5',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 6,
   },
 });

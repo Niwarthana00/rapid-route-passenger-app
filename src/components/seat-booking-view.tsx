@@ -371,6 +371,16 @@ function SeatButton({
       disabled={isOccupied}
       hitSlop={4}
     >
+      {/* Headrest detail for realistic seat representation */}
+      <View
+        style={[
+          styles.seatHeadrest,
+          isOccupied && styles.seatHeadrestOccupied,
+          !isOccupied && !isSelected && styles.seatHeadrestAvailable,
+          isSelected && styles.seatHeadrestSelected,
+        ]}
+      />
+      
       <Text
         style={[
           styles.seatLabel,
@@ -471,12 +481,14 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   seatAvailableBox: {
-    backgroundColor: '#EBF5FF',
+    backgroundColor: '#F0F9FF',
     borderWidth: 1.5,
-    borderColor: '#0E90E6',
+    borderColor: '#38BDF8',
   },
   seatOccupiedBox: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
   },
   seatSelectedBox: {
     backgroundColor: '#0E90E6',
@@ -566,40 +578,61 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   seatButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    borderWidth: 1.5,
+    marginTop: 6, // space for headrest
   },
   seatAvailable: {
-    backgroundColor: '#EBF5FF',
-    borderWidth: 1.5,
-    borderColor: '#0E90E6',
-    shadowColor: '#0E90E6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 1,
+    backgroundColor: '#F0F9FF',
+    borderColor: '#38BDF8',
   },
   seatOccupied: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   seatSelected: {
     backgroundColor: '#0E90E6',
+    borderColor: '#0E90E6',
     shadowColor: '#0E90E6',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 3,
   },
+  seatHeadrest: {
+    width: 18,
+    height: 5,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    position: 'absolute',
+    top: -5,
+    alignSelf: 'center',
+    borderWidth: 1.5,
+    borderBottomWidth: 0,
+  },
+  seatHeadrestAvailable: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#38BDF8',
+  },
+  seatHeadrestOccupied: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
+  seatHeadrestSelected: {
+    backgroundColor: '#0E90E6',
+    borderColor: '#0E90E6',
+  },
   seatLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
   seatLabelAvailable: {
-    color: '#0E90E6',
+    color: '#0284C7',
   },
   seatLabelOccupied: {
     color: '#94A3B8',

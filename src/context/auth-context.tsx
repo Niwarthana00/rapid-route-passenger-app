@@ -1,14 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import {
-  User,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile,
-  signOut,
-  onAuthStateChanged,
-} from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../services/api';
 
 export interface UserProfile {
   uid: string;
@@ -19,12 +11,13 @@ export interface UserProfile {
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: any | null;
   userProfile: UserProfile | null;
   isLoading: boolean;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (name: string, email: string, pass: string, phone: string) => Promise<void>;
   logout: () => Promise<void>;
+  setCurrentUserFromStorage: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -34,139 +27,77 @@ const AuthContext = createContext<AuthContextType>({
   loginWithEmail: async () => {},
   signUpWithEmail: async () => {},
   logout: async () => {},
+  setCurrentUserFromStorage: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Sync user profile from Firestore or Auth
-  const fetchUserProfile = async (currentUser: User) => {
+  const setCurrentUserFromStorage = async () => {
     try {
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setUserProfile({
-          uid: currentUser.uid,
-          name: data.name || currentUser.displayName || 'Passenger',
-          email: currentUser.email || '',
-          phone: data.phone || '+94 77 123 4567',
-          photoURL: currentUser.photoURL || null,
-        });
-      } else {
-        const defaultProfile: UserProfile = {
-          uid: currentUser.uid,
-          name: currentUser.displayName || 'Passenger',
-          email: currentUser.email || '',
-          phone: '+94 77 123 4567',
-          photoURL: currentUser.photoURL || null,
+      const token = await AsyncStorage.getItem('userToken');
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (token && userDataStr) {
+        const userData = JSON.parse(userDataStr);
+        const u = userData.user || userData;
+        const p = userData.profile || {};
+        const profile: UserProfile = {
+          uid: u.id || u.uid || '1',
+          name: p.full_name || p.fullName || u.fullName || u.name || 'Passenger',
+          email: u.email || p.email || '',
+          phone: u.phone || p.phone || '',
+          photoURL: null,
         };
-        setUserProfile(defaultProfile);
-        await setDoc(userDocRef, defaultProfile, { merge: true });
+        setUser(u);
+        setUserProfile(profile);
+      } else {
+        setUser(null);
+        setUserProfile(null);
       }
     } catch (e) {
-      setUserProfile({
-        uid: currentUser.uid,
-        name: currentUser.displayName || 'Passenger',
-        email: currentUser.email || '',
-        phone: '+94 77 123 4567',
-        photoURL: currentUser.photoURL || null,
-      });
+      console.warn('[AuthContext] Failed to load user from storage:', e);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        await fetchUserProfile(currentUser);
-      } else {
-        setUserProfile(null);
-      }
+    async function loadStoredAuth() {
+      setIsLoading(true);
+      await setCurrentUserFromStorage();
       setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    }
+    loadStoredAuth();
   }, []);
 
-  // Email / Password Login
   const loginWithEmail = async (email: string, pass: string) => {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
-      await fetchUserProfile(userCredential.user);
-    } catch (e) {
-      console.warn('[Auth] Firebase Auth failed, falling back to local developer login:', e);
-      // Simulate successful login with a mock local user
-      const mockUser: any = {
-        uid: `dev-user-${Math.floor(Math.random() * 10000)}`,
-        displayName: email.split('@')[0],
-        email: email.trim(),
-        emailVerified: true,
-      };
-      setUser(mockUser);
-      setUserProfile({
-        uid: mockUser.uid,
-        name: mockUser.displayName || 'Passenger',
-        email: mockUser.email,
-        phone: '+94 77 123 4567',
-        photoURL: null,
-      });
+    const res = await api.loginUser(email, pass);
+    if (res.success && res.data) {
+      await AsyncStorage.setItem('userToken', res.data.token);
+      await AsyncStorage.setItem('userData', JSON.stringify(res.data));
+      await setCurrentUserFromStorage();
+    } else {
+      throw new Error(res.message || 'Invalid credentials');
     }
   };
 
-  // Email / Password Sign Up
   const signUpWithEmail = async (name: string, email: string, pass: string, phone: string) => {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-      const currentUser = userCredential.user;
-
-      // Update display name in Firebase Auth
-      if (name) {
-        await updateProfile(currentUser, { displayName: name.trim() });
-      }
-
-      // Save profile to Firestore
-      const newProfile: UserProfile = {
-        uid: currentUser.uid,
-        name: name.trim() || 'Passenger',
-        email: email.trim(),
-        phone: phone.trim() || '+94 77 123 4567',
-        photoURL: null,
-      };
-
-      try {
-        await setDoc(doc(db, 'users', currentUser.uid), newProfile);
-      } catch (e) {
-        console.log('Firestore write skipped or failed:', e);
-      }
-
-      setUserProfile(newProfile);
-    } catch (e) {
-      console.warn('[Auth] Firebase Sign-Up failed, falling back to local developer account creation:', e);
-      const mockUser: any = {
-        uid: `dev-user-${Math.floor(Math.random() * 10000)}`,
-        displayName: name.trim(),
-        email: email.trim(),
-        emailVerified: true,
-      };
-      setUser(mockUser);
-      setUserProfile({
-        uid: mockUser.uid,
-        name: name.trim() || 'Passenger',
-        email: email.trim(),
-        phone: phone.trim() || '+94 77 123 4567',
-        photoURL: null,
-      });
+    const regRes = await api.registerPassenger({
+      fullName: name,
+      phone,
+      email,
+      password: pass,
+    });
+    if (regRes.success) {
+      await loginWithEmail(email, pass);
+    } else {
+      throw new Error(regRes.message || 'Registration failed');
     }
   };
 
-
-  // Logout
   const logout = async () => {
-    await signOut(auth);
+    await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('userData');
     setUser(null);
     setUserProfile(null);
   };
@@ -180,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithEmail,
         signUpWithEmail,
         logout,
+        setCurrentUserFromStorage,
       }}
     >
       {children}

@@ -41,32 +41,63 @@ export default function MyTripsScreen() {
     async function loadActiveBooking() {
       setIsLoading(true);
       const data = await api.getBookingHistory();
+      console.log('[MY-TRIPS] All bookings:', data);
       const upcoming = data.find((b: any) => b.status === 'upcoming');
+      console.log('[MY-TRIPS] Active/upcoming booking:', upcoming);
       setActiveBooking(upcoming);
       setIsLoading(false);
     }
     loadActiveBooking();
   }, []);
 
+  // Poll live tracking configuration
+  const [liveTracking, setLiveTracking] = useState<any>(null);
+  useEffect(() => {
+    if (!activeBooking || !activeBooking.tripId) return;
+
+    let isMounted = true;
+    async function fetchTracking() {
+      const data = await api.getLiveLocation(activeBooking.tripId);
+      if (isMounted && data) {
+        setLiveTracking(data);
+      }
+    }
+
+    fetchTracking();
+    const interval = setInterval(fetchTracking, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeBooking]);
+
   const selectedDropOffHalt = activeBooking ? activeBooking.to : 'Destination';
 
   // Generate dynamic halts matching the user's booked route number
   const haltsList = activeBooking ? (ROUTE_HALTS[activeBooking.routeNumber] || ROUTE_HALTS['138']) : [];
-  const journeyHalts: HaltStep[] = haltsList.map((name, index) => {
-    const isPassed = index < 3;
-    const isCurrent = index === 3;
-    return {
-      id: String(index + 1),
-      name,
-      time: index === 0 && activeBooking ? activeBooking.time : `${8 + index}:10 AM`,
-      status: isPassed ? 'passed' : isCurrent ? 'current' : 'upcoming',
-      isAlarmHalt: isCurrent,
-      distance: isCurrent ? '1 stop away (2 min)' : undefined,
-    };
-  });
+  const journeyHalts: HaltStep[] = liveTracking && Array.isArray(liveTracking.halts)
+    ? liveTracking.halts.map((h: any, index: number) => ({
+        id: String(index + 1),
+        name: h.haltName,
+        time: index === 0 && activeBooking ? activeBooking.time : `${8 + index}:10 AM`,
+        status: h.status.toLowerCase() as 'passed' | 'current' | 'upcoming',
+        isAlarmHalt: h.status === 'CURRENT',
+        distance: h.status === 'CURRENT' ? 'Current location' : undefined,
+      }))
+    : (activeBooking ? (ROUTE_HALTS[activeBooking.routeNumber] || ROUTE_HALTS['138']).map((name, index) => ({
+        id: String(index + 1),
+        name,
+        time: index === 0 && activeBooking ? activeBooking.time : `${8 + index}:10 AM`,
+        status: index < 3 ? 'passed' : index === 3 ? 'current' : 'upcoming',
+        isAlarmHalt: index === 3,
+        distance: index === 3 ? '1 stop away (2 min)' : undefined,
+      })) : []);
 
-  // Check if bus is 1 halt before destination
-  const isOneHaltBefore = activeBooking !== null;
+  // Trigger alarm if bus is 1 halt before destination or at destination
+  const isOneHaltBefore = liveTracking
+    ? (liveTracking.totalStops - 1 - liveTracking.currentStopIndex <= 1)
+    : (activeBooking !== null);
 
   if (isLoading) {
     return (
@@ -156,19 +187,19 @@ export default function MyTripsScreen() {
           <View style={styles.telemetryRow}>
             <View style={styles.telemetryBox}>
               <Ionicons name="speedometer-outline" size={16} color="#0E90E6" />
-              <Text style={styles.telemetryVal}>52 km/h</Text>
+              <Text style={styles.telemetryVal}>{liveTracking ? `${liveTracking.speed} km/h` : '52 km/h'}</Text>
               <Text style={styles.telemetryLabel}>Live Speed</Text>
             </View>
 
             <View style={styles.telemetryBox}>
               <Ionicons name="time-outline" size={16} color="#059669" />
-              <Text style={styles.telemetryVal}>38 min</Text>
+              <Text style={styles.telemetryVal}>{liveTracking ? `${liveTracking.etaMins} min` : '38 min'}</Text>
               <Text style={styles.telemetryLabel}>To Destination</Text>
             </View>
 
             <View style={styles.telemetryBox}>
               <Ionicons name="navigate-outline" size={16} color="#6366F1" />
-              <Text style={styles.telemetryVal}>24.5 km</Text>
+              <Text style={styles.telemetryVal}>{liveTracking ? `${(liveTracking.etaMins * 0.7).toFixed(1)} km` : '24.5 km'}</Text>
               <Text style={styles.telemetryLabel}>Distance Left</Text>
             </View>
           </View>
@@ -222,7 +253,9 @@ export default function MyTripsScreen() {
         <View style={styles.timelineSectionCard}>
           <View style={styles.timelineHeader}>
             <Text style={styles.timelineSectionTitle}>Route Progress</Text>
-            <Text style={styles.timelineNextHaltNotice}>Next: {selectedDropOffHalt} (2 min)</Text>
+            <Text style={styles.timelineNextHaltNotice}>
+              Next: {liveTracking ? liveTracking.nextStop : selectedDropOffHalt} ({liveTracking ? `${Math.round(liveTracking.etaMins / 3)} min` : '2 min'})
+            </Text>
           </View>
 
           <View style={styles.timelineList}>
@@ -564,9 +597,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   timelineHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 4,
     marginBottom: 16,
   },
   timelineSectionTitle: {

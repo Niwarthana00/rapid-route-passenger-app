@@ -81,7 +81,7 @@ function AppFlowContent() {
       {/* Full-screen initial overlays (Splash, Onboarding, Login/Signup) */}
       <AnimatedSplashOverlay />
 
-      {!isOnboarded && (
+      {!isOnboarded && !isLoggedIn && !isLoading && (
         <OnboardingOverlay onFinish={() => setIsOnboarded(true)} />
       )}
 

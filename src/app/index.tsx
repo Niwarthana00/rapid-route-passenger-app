@@ -20,76 +20,109 @@ interface RouteItem {
 
 // SAMPLE_ROUTES has been removed in favor of live backend API queries
 
-// Mock Map Component for Home Screen
-const VectorMapBackground = () => (
-  <View style={styles.mapContainer}>
-    <Svg width="100%" height="100%" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice" style={styles.mapSvg}>
-      {/* Background Land */}
-      <Path d="M0 0h400v400H0z" fill="#E6EFEA" />
-      
-      {/* Water body / River */}
-      <Path
-        d="M-50 150 C 100 120, 200 280, 450 250 L 450 300 C 200 330, 100 170, -50 200 Z"
-        fill="#C5DFEB"
-      />
-      
-      {/* Primary Roads */}
-      <Path
-        d="M 120 -50 C 140 150, 110 250, 150 450"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="20"
-        strokeLinecap="round"
-      />
-      <Path
-        d="M 120 -50 C 140 150, 110 250, 150 450"
-        fill="none"
-        stroke="#E2EBE6"
-        strokeWidth="2"
-        strokeDasharray="4,4"
-        strokeLinecap="round"
-      />
-      
-      {/* Curved Crossing Road */}
-      <Path
-        d="M -50 80 C 100 100, 250 120, 450 50"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="16"
-        strokeLinecap="round"
-      />
-      
-      {/* Road 3 (Leading to 138) */}
-      <Path
-        d="M 130 180 C 250 200, 280 300, 320 450"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="16"
-        strokeLinecap="round"
-      />
-    </Svg>
+// Mock Map Component for Home Screen with Dynamic Markers
+interface VectorMapBackgroundProps {
+  activeBooking: any;
+  routes: RouteItem[];
+}
 
-    {/* Bus Marker 138 */}
-    <View style={[styles.busMarker, { top: '55%', left: '46%' }]}>
-      <View style={styles.markerBubble}>
-        <Text style={styles.markerText}>138</Text>
-      </View>
-      <View style={styles.arrowContainer}>
-        <View style={[styles.navigationArrow, { transform: [{ rotate: '45deg' }] }]} />
-      </View>
-    </View>
+const VectorMapBackground = ({ activeBooking, routes }: VectorMapBackgroundProps) => {
+  const markersToShow: { routeNumber: string; top: any; left: any; rotate: string }[] = [];
 
-    {/* Bus Marker 17 */}
-    <View style={[styles.busMarker, { top: '35%', left: '72%' }]}>
-      <View style={styles.markerBubble}>
-        <Text style={styles.markerText}>17</Text>
-      </View>
-      <View style={styles.arrowContainer}>
-        <View style={[styles.navigationArrow, { transform: [{ rotate: '-30deg' }] }]} />
-      </View>
+  if (activeBooking) {
+    markersToShow.push({
+      routeNumber: activeBooking.routeNumber,
+      top: '48%',
+      left: '38%',
+      rotate: '45deg',
+    });
+  } else if (routes && routes.length > 0) {
+    const route1 = routes[0];
+    markersToShow.push({
+      routeNumber: route1.routeNumber,
+      top: '55%',
+      left: '46%',
+      rotate: '45deg',
+    });
+    if (routes.length > 1) {
+      const route2 = routes[1];
+      markersToShow.push({
+        routeNumber: route2.routeNumber,
+        top: '35%',
+        left: '72%',
+        rotate: '-30deg',
+      });
+    }
+  } else {
+    markersToShow.push({
+      routeNumber: '138',
+      top: '55%',
+      left: '46%',
+      rotate: '45deg',
+    });
+  }
+
+  return (
+    <View style={styles.mapContainer}>
+      <Svg width="100%" height="100%" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice" style={styles.mapSvg}>
+        {/* Background Land */}
+        <Path d="M0 0h400v400H0z" fill="#E6EFEA" />
+        
+        {/* Water body / River */}
+        <Path
+          d="M-50 150 C 100 120, 200 280, 450 250 L 450 300 C 200 330, 100 170, -50 200 Z"
+          fill="#C5DFEB"
+        />
+        
+        {/* Primary Roads */}
+        <Path
+          d="M 120 -50 C 140 150, 110 250, 150 450"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="20"
+          strokeLinecap="round"
+        />
+        <Path
+          d="M 120 -50 C 140 150, 110 250, 150 450"
+          fill="none"
+          stroke="#E2EBE6"
+          strokeWidth="2"
+          strokeDasharray="4,4"
+          strokeLinecap="round"
+        />
+        
+        {/* Curved Crossing Road */}
+        <Path
+          d="M -50 80 C 100 100, 250 120, 450 50"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="16"
+          strokeLinecap="round"
+        />
+        
+        {/* Road 3 */}
+        <Path
+          d="M 130 180 C 250 200, 280 300, 320 450"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="16"
+          strokeLinecap="round"
+        />
+      </Svg>
+
+      {markersToShow.map((m, idx) => (
+        <View key={idx} style={[styles.busMarker, { top: m.top, left: m.left }]}>
+          <View style={styles.markerBubble}>
+            <Text style={styles.markerText}>{m.routeNumber}</Text>
+          </View>
+          <View style={styles.arrowContainer}>
+            <View style={[styles.navigationArrow, { transform: [{ rotate: m.rotate }] }]} />
+          </View>
+        </View>
+      ))}
     </View>
-  </View>
-);
+  );
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -109,6 +142,21 @@ export default function HomeScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeBooking, setActiveBooking] = useState<any>(null);
+
+  // Fetch active bookings on load for map display
+  useEffect(() => {
+    async function loadActiveBooking() {
+      try {
+        const data = await api.getBookingHistory();
+        const upcoming = data.find((b: any) => b.status === 'upcoming');
+        setActiveBooking(upcoming);
+      } catch (err) {
+        console.warn('Failed to load active booking on home screen:', err);
+      }
+    }
+    loadActiveBooking();
+  }, []);
 
   // Draggable Bottom Sheet Configurations
   const screenHeight = Dimensions.get('window').height;
@@ -329,7 +377,7 @@ export default function HomeScreen() {
         /* Normal Map + Bottom Sheet Home View */
         <>
           {/* Mock Map Background */}
-          <VectorMapBackground />
+          <VectorMapBackground activeBooking={activeBooking} routes={routes} />
 
           {/* Top Floating Header & Search Area */}
           <View style={[styles.topSection, { paddingTop: topInset + (Platform.OS === 'ios' ? 8 : 12) }]}>

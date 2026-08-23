@@ -45,6 +45,7 @@ export function SeatBookingView({
 }: SeatBookingViewProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { setTabBarVisible } = useTabBar();
   const topInset = Math.max(insets.top, 20);
 
   const totalSeats = 40;
@@ -92,6 +93,14 @@ export function SeatBookingView({
     }
     loadSeats();
   }, [bus.id]);
+
+  // Hide bottom tab bar while seat selection screen is active, restore on unmount
+  useEffect(() => {
+    setTabBarVisible(false);
+    return () => {
+      setTabBarVisible(true);
+    };
+  }, [setTabBarVisible]);
 
   const toggleSeat = (seat: SeatItem) => {
     if (seat.status === 'occupied') return;
@@ -162,7 +171,7 @@ export function SeatBookingView({
     );
   };
 
-  const { setTabBarVisible } = useTabBar();
+
 
   // Render loading screen if seats are loading or not populated yet
   if (isLoadingSeats || seats.length === 0) {

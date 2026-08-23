@@ -9,9 +9,13 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../services/api';
+import { Ionicons } from '@expo/vector-icons';
 
 
 interface LoginOverlayProps {
@@ -34,35 +38,26 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
   
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    const identifier = email.trim();
+    if (!identifier || !password) {
+      setError('Please enter your phone number or email and password.');
       return;
     }
     setError('');
     setIsSubmitting(true);
 
-    let formattedEmail = email.trim();
-    if (!formattedEmail.includes('@')) {
-      formattedEmail = `${formattedEmail}@rapidroute.com`;
-    }
-
     try {
-      await loginWithEmail(formattedEmail, password);
+      // Call Context Login to update user state and persistence
+      await loginWithEmail(identifier, password);
       onLoginSuccess();
     } catch (err: any) {
-      let msg = 'Failed to sign in. Please check your credentials.';
-      if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
-        msg = 'No account found with this email or incorrect password.';
-      } else if (err?.code === 'auth/wrong-password') {
-        msg = 'Incorrect password. Please try again.';
-      } else if (err?.code === 'auth/invalid-email') {
-        msg = 'Please enter a valid email address.';
-      } else if (err?.message) {
-        msg = err.message;
-      }
-      setError(msg);
+      console.error('Login error:', err);
+      setError(err.message || 'Invalid phone number/email or password.');
+      Alert.alert('Login Failed', err.message || 'Invalid phone number/email or password.');
     } finally {
       setIsSubmitting(false);
     }
@@ -84,26 +79,15 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
     setError('');
     setIsSubmitting(true);
 
-    let formattedEmail = email.trim();
-    if (!formattedEmail.includes('@')) {
-      formattedEmail = `${formattedEmail}@rapidroute.com`;
-    }
-
     try {
-      await signUpWithEmail(name, formattedEmail, password, phone);
+      // Call Context Sign Up to register and then auto-login
+      await signUpWithEmail(name.trim(), email.trim(), password, phone.trim());
+      Alert.alert('Registration Successful', 'Your account has been created successfully!');
       onLoginSuccess();
     } catch (err: any) {
-      let msg = 'Failed to create account.';
-      if (err?.code === 'auth/email-already-in-use') {
-        msg = 'This email is already registered. Please log in instead.';
-      } else if (err?.code === 'auth/weak-password') {
-        msg = 'Password is too weak. Please use at least 6 characters.';
-      } else if (err?.code === 'auth/invalid-email') {
-        msg = 'Please enter a valid email address.';
-      } else if (err?.message) {
-        msg = err.message;
-      }
-      setError(msg);
+      console.error('Signup error:', err);
+      setError(err.message || 'Failed to create account. Please try again.');
+      Alert.alert('Signup Error', err.message || 'Failed to create account. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -131,7 +115,7 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
               <>
                 {/* Title Section */}
                 <Text style={styles.title}>Welcome back</Text>
-                <Text style={styles.subtitle}>Enter your email and password to continue</Text>
+                <Text style={styles.subtitle}>Enter your phone number or email to continue</Text>
 
                 {/* Error Message */}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -140,23 +124,34 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
                 <View style={styles.inputContainer}>
                   <TextInput
                     style={styles.input}
-                    placeholder="Email address"
+                    placeholder="Phone number or email"
                     placeholderTextColor="#8A95A5"
-                    keyboardType="email-address"
                     autoCapitalize="none"
                     value={email}
                     onChangeText={setEmail}
                     editable={!isSubmitting}
                   />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    placeholderTextColor="#8A95A5"
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!isSubmitting}
-                  />
+                  <View style={styles.passwordWrapper}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Password"
+                      placeholderTextColor="#8A95A5"
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      editable={!isSubmitting}
+                    />
+                    <Pressable
+                      style={styles.eyeIcon}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={22}
+                        color="#8A95A5"
+                      />
+                    </Pressable>
+                  </View>
                 </View>
 
                 {/* Continue Button */}
@@ -217,24 +212,48 @@ export function LoginOverlay({ onLoginSuccess }: LoginOverlayProps) {
                     onChangeText={setPhone}
                     editable={!isSubmitting}
                   />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Password (at least 6 chars)"
-                    placeholderTextColor="#8A95A5"
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!isSubmitting}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Confirm Password"
-                    placeholderTextColor="#8A95A5"
-                    secureTextEntry
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    editable={!isSubmitting}
-                  />
+                  <View style={styles.passwordWrapper}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Password (at least 6 chars)"
+                      placeholderTextColor="#8A95A5"
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      editable={!isSubmitting}
+                    />
+                    <Pressable
+                      style={styles.eyeIcon}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={22}
+                        color="#8A95A5"
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.passwordWrapper}>
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Confirm Password"
+                      placeholderTextColor="#8A95A5"
+                      secureTextEntry={!showConfirmPassword}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      editable={!isSubmitting}
+                    />
+                    <Pressable
+                      style={styles.eyeIcon}
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      <Ionicons
+                        name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={22}
+                        color="#8A95A5"
+                      />
+                    </Pressable>
+                  </View>
                 </View>
 
                 {/* Continue Button */}
@@ -329,6 +348,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 15,
     color: '#111827',
+  },
+  passwordWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: 14,
+    top: 15,
+    zIndex: 10,
   },
   continueButton: {
     backgroundColor: '#0E90E6',

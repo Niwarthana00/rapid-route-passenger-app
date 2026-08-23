@@ -1,6 +1,7 @@
 import { BusDetail } from '@/components/route-detail-view';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const getBackendUrl = () => {
   const hostUri = Constants.expoConfig?.hostUri;
@@ -19,7 +20,7 @@ console.log('[API] Configured Backend Base URL:', API_BASE_URL);
 
 
 // Helper to handle fetch with timeout to prevent long hanging offline calls
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 3000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 10000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
@@ -115,17 +116,37 @@ export const api = {
   }) {
     try {
       console.log('[API] Creating new booking:', bookingDetails);
+      const token = await AsyncStorage.getItem('userToken');
+      const userDataStr = await AsyncStorage.getItem('userData');
+      let passengerName = 'Passenger';
+      let passengerPhone = '0771234567';
+      
+      if (userDataStr) {
+        const userData = JSON.parse(userDataStr);
+        const u = userData.user || {};
+        const p = userData.profile || {};
+        passengerName = p.full_name || p.fullName || u.fullName || u.name || 'Passenger';
+        passengerPhone = u.phone || p.phone || '0771234567';
+      }
+
       const body = {
         tripId: bookingDetails.busId || '',
         seatNumbers: bookingDetails.seatNumbers,
-        passengerName: 'Passenger',
-        passengerPhone: '0771234567',
+        passengerName,
+        passengerPhone,
         paymentMethod: 'CARD',
       };
+
+      const headers: any = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetchWithTimeout(`${API_BASE_URL}/bookings/confirm`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...headers,
         },
         body: JSON.stringify(body),
       });
@@ -144,7 +165,15 @@ export const api = {
   async getBookingHistory() {
     try {
       console.log('[API] Fetching passenger booking history');
-      const res = await fetchWithTimeout(`${API_BASE_URL}/bookings/my-trips`);
+      const token = await AsyncStorage.getItem('userToken');
+      const headers: any = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetchWithTimeout(`${API_BASE_URL}/bookings/my-trips`, {
+        headers,
+      });
       if (res.ok) {
         const json = await res.json();
         const rawList = json && json.success && Array.isArray(json.data) 
@@ -185,6 +214,7 @@ export const api = {
             date: formattedDate,
             time: formattedTime,
             status: status,
+            tripId: b.tripId,
           };
         });
       }
@@ -222,4 +252,79 @@ export const api = {
       return [];
     }
   },
+
+  // 7. Register Passenger
+  async registerPassenger(data: {
+    fullName: string;
+    phone: string;
+    email?: string;
+    password: string;
+  }) {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return await response.json();
+  },
+
+  // 8. Login (Passenger & Driver)
+  async loginUser(identifier: string, password: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password }),
+    });
+    return await response.json();
+  },
+
+  // 9. Get Logged-in Profile
+  async getUserProfile(token: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await response.json();
+  },
+
+  // 11. Get live location of a bus trip
+  async getLiveLocation(tripId: string) {
+    try {
+      console.log('[API] Fetching live location for trip:', tripId);
+      const res = await fetchWithTimeout(`${API_BASE_URL}/tracking/trips/${tripId}`);
+      if (res.ok) {
+        const json = await res.json();
+        return json && json.success ? json.data : json;
+      }
+      throw new Error(`Server returned ${res.status}`);
+    } catch (err) {
+      console.warn('[API] getLiveLocation failed:', err);
+      return null;
+    }
+  },
+};
+
+// Standalone exports for compatibility
+export const registerPassenger = api.registerPassenger;
+export const loginUser = api.loginUser;
+export const getUserProfile = api.getUserProfile;
+export const getLiveLocation = api.getLiveLocation;
+
+// 10. Get list of previous passenger bookings/trips with explicit token/passengerId options
+export const getMyBookings = async (token?: string, passengerId?: string) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  const url = passengerId 
+    ? `${API_BASE_URL}/bookings/my-trips?passengerId=${passengerId}`
+    : `${API_BASE_URL}/bookings/my-trips`;
+
+  const response = await fetch(url, { headers });
+  return await response.json();
 };

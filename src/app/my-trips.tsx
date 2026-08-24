@@ -11,9 +11,26 @@ import {
   Share,
   Vibration,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
+import MapView, { UrlTile, Polyline, Marker } from 'react-native-maps';
+// @ts-ignore
+import { io } from 'socket.io-client/dist/socket.io.js';
+
+const getSocketUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:5000`;
+  }
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000';
+  }
+  return 'http://localhost:5000';
+};
 
 interface HaltStep {
   id: string;
@@ -35,6 +52,9 @@ export default function MyTripsScreen() {
   const [isAlarmEnabled, setIsAlarmEnabled] = useState(true);
   const [activeBooking, setActiveBooking] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Live map position tracking state
+  const [busPos, setBusPos] = useState({ latitude: 6.9344, longitude: 79.8428 });
 
   // Fetch active bookings on load
   useEffect(() => {
@@ -69,6 +89,50 @@ export default function MyTripsScreen() {
     return () => {
       isMounted = false;
       clearInterval(interval);
+    };
+  }, [activeBooking]);
+
+  // Synchronize initial position on HTTP load
+  useEffect(() => {
+    if (liveTracking && liveTracking.latitude && liveTracking.longitude) {
+      setBusPos({
+        latitude: parseFloat(liveTracking.latitude),
+        longitude: parseFloat(liveTracking.longitude),
+      });
+    }
+  }, [liveTracking?.tripId]);
+
+  // Establish live Socket.IO channel updates for smooth real-time GPS
+  useEffect(() => {
+    if (!activeBooking || !activeBooking.tripId) return;
+
+    const socketUrl = getSocketUrl();
+    console.log('[SOCKET] Connecting to live tracking server:', socketUrl);
+    const socket = io(socketUrl, {
+      transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+      console.log('[SOCKET] Connected to tracking server. Joining trip channel:', activeBooking.tripId);
+      socket.emit('join_trip', activeBooking.tripId);
+    });
+
+    socket.on('bus_location_update', (data: any) => {
+      console.log('[SOCKET] Real-time coordinate update received:', data);
+      if (data && data.latitude && data.longitude) {
+        setBusPos({
+          latitude: parseFloat(data.latitude),
+          longitude: parseFloat(data.longitude),
+        });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[SOCKET] Disconnected from tracking server');
+    });
+
+    return () => {
+      socket.disconnect();
     };
   }, [activeBooking]);
 
@@ -203,6 +267,40 @@ export default function MyTripsScreen() {
               <Text style={styles.telemetryLabel}>Distance Left</Text>
             </View>
           </View>
+        </View>
+
+        {/* Live Interactive Map Card */}
+        <View style={styles.mapCard}>
+          <MapView
+            style={styles.map}
+            region={{
+              latitude: busPos.latitude,
+              longitude: busPos.longitude,
+              latitudeDelta: 0.03,
+              longitudeDelta: 0.03,
+            }}
+            scrollEnabled={true}
+            zoomEnabled={true}
+            pitchEnabled={false}
+            rotateEnabled={false}
+          >
+            <UrlTile
+              urlTemplate="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maximumZ={19}
+            />
+            {liveTracking && Array.isArray(liveTracking.polyline) && liveTracking.polyline.length > 0 && (
+              <Polyline
+                coordinates={liveTracking.polyline}
+                strokeColor="#0E90E6"
+                strokeWidth={4}
+              />
+            )}
+            <Marker coordinate={busPos} title={activeBooking?.busPlate || 'Bus'}>
+              <View style={styles.busMarker}>
+                <Ionicons name="bus" size={16} color="#FFFFFF" />
+              </View>
+            </Marker>
+          </MapView>
         </View>
 
         {/* Next Halt Alarm Banner (Appears only 1 halt before destination) */}
@@ -809,5 +907,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     marginTop: 6,
+  },
+  mapCard: {
+    height: 240,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#EEF2F6',
+    backgroundColor: '#E5E7EB',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  busMarker: {
+    backgroundColor: '#0E90E6',
+    padding: 8,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

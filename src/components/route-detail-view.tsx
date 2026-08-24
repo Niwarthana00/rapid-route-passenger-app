@@ -12,11 +12,29 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SeatBookingView } from './seat-booking-view';
+import Constants from 'expo-constants';
+import MapView, { UrlTile, Polyline, Marker } from 'react-native-maps';
+// @ts-ignore
+import { io } from 'socket.io-client/dist/socket.io.js';
+
+const getSocketUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:5000`;
+  }
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000';
+  }
+  return 'http://localhost:5000';
+};
 
 export interface BusDetail {
   id: string;
@@ -219,6 +237,63 @@ export function RouteDetailView({
   const [expandedBusId, setExpandedBusId] = useState<string | null>(null);
   const [selectedBusForBooking, setSelectedBusForBooking] = useState<BusDetail | null>(null);
 
+  // Live Map tracking states for single bus explore modal
+  const [trackingBus, setTrackingBus] = useState<BusDetail | null>(null);
+  const [modalBusPos, setModalBusPos] = useState({ latitude: 6.9344, longitude: 79.8428 });
+  const [modalTrackingData, setModalTrackingData] = useState<any>(null);
+
+  useEffect(() => {
+    if (!trackingBus) return;
+
+    const tripId = trackingBus.id;
+    let isMounted = true;
+
+    // 1. Initial location HTTP fetch
+    async function fetchInitialLocation() {
+      const data = await api.getLiveLocation(tripId);
+      if (isMounted && data) {
+        setModalTrackingData(data);
+        setModalBusPos({
+          latitude: parseFloat(data.latitude),
+          longitude: parseFloat(data.longitude),
+        });
+      }
+    }
+    fetchInitialLocation();
+
+    // 2. Connect WebSockets for smooth real-time coordinates
+    const socketUrl = getSocketUrl();
+    console.log('[EXPLORE-TRACK] Connecting socket:', socketUrl);
+    const socket = io(socketUrl, { transports: ['websocket'] });
+
+    socket.on('connect', () => {
+      console.log('[EXPLORE-TRACK] Joined trip channel:', tripId);
+      socket.emit('join_trip', tripId);
+    });
+
+    socket.on('bus_location_update', (data: any) => {
+      console.log('[EXPLORE-TRACK] Live bus coordinates updated:', data);
+      if (isMounted && data && data.latitude && data.longitude) {
+        setModalBusPos({
+          latitude: parseFloat(data.latitude),
+          longitude: parseFloat(data.longitude),
+        });
+        setModalTrackingData((prev: any) => prev ? {
+          ...prev,
+          speed: data.speed,
+          etaMins: data.etaMins,
+          currentStop: data.currentStop,
+          nextStop: data.nextStop,
+        } : data);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      socket.disconnect();
+    };
+  }, [trackingBus]);
+
   // If user opened Seat Selection Screen for a bus
   if (selectedBusForBooking) {
     return (
@@ -233,7 +308,7 @@ export function RouteDetailView({
   }
 
   const handleTrackOnly = (bus: BusDetail) => {
-    Alert.alert('Live Tracking 📡', `Tracking bus ${bus.plateNumber} near ${bus.currentStop}. Estimated time of arrival is ${bus.eta}.`);
+    setTrackingBus(bus);
   };
 
   const toggleExpand = (busId: string) => {
@@ -438,6 +513,90 @@ export function RouteDetailView({
           )}
         </ScrollView>
       </Animated.View>
+
+      {/* Live Bus Tracking Full-Screen Modal */}
+      <Modal
+        visible={trackingBus !== null}
+        animationType="slide"
+        onRequestClose={() => setTrackingBus(null)}
+      >
+        <SafeAreaView style={styles.modalContainer} edges={['top']}>
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setTrackingBus(null)} style={styles.modalCloseBtn} hitSlop={8}>
+              <Ionicons name="chevron-back" size={24} color="#111827" />
+            </Pressable>
+            <View style={styles.modalHeaderTitleCol}>
+              <Text style={styles.modalHeaderTitle}>Live Tracking</Text>
+              <Text style={styles.modalHeaderSubtitle}>
+                Bus: {trackingBus?.plateNumber || 'Bus'} • Route {routeNumber}
+              </Text>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Map Section */}
+          <View style={{ flex: 1, position: 'relative' }}>
+            <MapView
+              style={StyleSheet.absoluteFillObject}
+              region={{
+                latitude: modalBusPos.latitude,
+                longitude: modalBusPos.longitude,
+                latitudeDelta: 0.03,
+                longitudeDelta: 0.03,
+              }}
+              scrollEnabled={true}
+              zoomEnabled={true}
+            >
+              <UrlTile
+                urlTemplate="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maximumZ={19}
+              />
+              {modalTrackingData && Array.isArray(modalTrackingData.polyline) && modalTrackingData.polyline.length > 0 && (
+                <Polyline
+                  coordinates={modalTrackingData.polyline}
+                  strokeColor="#0E90E6"
+                  strokeWidth={4}
+                />
+              )}
+              <Marker coordinate={modalBusPos} title={trackingBus?.plateNumber || 'Bus'}>
+                <View style={styles.modalBusMarker}>
+                  <Ionicons name="bus" size={18} color="#FFFFFF" />
+                </View>
+              </Marker>
+            </MapView>
+
+            {/* Floating Live Telemetry Cards on top of map */}
+            <View style={styles.floatingTelemetryCard}>
+              <View style={styles.telemetryMiniRow}>
+                <View style={styles.telemetryMiniBox}>
+                  <Ionicons name="speedometer-outline" size={14} color="#0E90E6" />
+                  <Text style={styles.telemetryMiniVal}>
+                    {modalTrackingData ? `${modalTrackingData.speed} km/h` : '50 km/h'}
+                  </Text>
+                  <Text style={styles.telemetryMiniLabel}>Speed</Text>
+                </View>
+                <View style={styles.telemetryDivider} />
+                <View style={styles.telemetryMiniBox}>
+                  <Ionicons name="time-outline" size={14} color="#059669" />
+                  <Text style={styles.telemetryMiniVal}>
+                    {modalTrackingData ? `${modalTrackingData.etaMins} min` : '8 min'}
+                  </Text>
+                  <Text style={styles.telemetryMiniLabel}>ETA</Text>
+                </View>
+                <View style={styles.telemetryDivider} />
+                <View style={styles.telemetryMiniBox}>
+                  <Ionicons name="navigate-outline" size={14} color="#6366F1" />
+                  <Text style={styles.telemetryMiniVal} numberOfLines={1}>
+                    {modalTrackingData ? modalTrackingData.currentStop : (trackingBus?.currentStop || 'Tracking')}
+                  </Text>
+                  <Text style={styles.telemetryMiniLabel}>Near Stop</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -857,5 +1016,94 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 20,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  modalCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  modalHeaderTitleCol: {
+    alignItems: 'center',
+  },
+  modalHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  modalHeaderSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  modalBusMarker: {
+    backgroundColor: '#0E90E6',
+    padding: 8,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  floatingTelemetryCard: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#EEF2F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  telemetryMiniRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  telemetryMiniBox: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  telemetryMiniVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  telemetryMiniLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  telemetryDivider: {
+    width: 1.5,
+    height: 30,
+    backgroundColor: '#EEF2F6',
   },
 });

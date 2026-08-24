@@ -45,10 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const p = userData.profile || {};
         const profile: UserProfile = {
           uid: u.id || u.uid || '1',
-          name: p.full_name || p.fullName || u.fullName || u.name || 'Passenger',
+          name: p.fullName || p.full_name || u.fullName || u.name || 'Passenger',
           email: u.email || p.email || '',
           phone: u.phone || p.phone || '',
-          photoURL: null,
+          photoURL: u.photoUrl || u.photo_url || p.photoUrl || p.photo_url || null,
         };
         setUser(u);
         setUserProfile(profile);

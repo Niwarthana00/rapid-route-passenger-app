@@ -304,6 +304,25 @@ export const api = {
       return null;
     }
   },
+
+  // 12. Update Passenger Profile
+  async updateProfile(data: {
+    fullName: string;
+    phone: string;
+    email?: string;
+    photoUrl?: string;
+  }) {
+    const token = await AsyncStorage.getItem('userToken');
+    const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return await response.json();
+  },
 };
 
 // Standalone exports for compatibility
@@ -311,6 +330,7 @@ export const registerPassenger = api.registerPassenger;
 export const loginUser = api.loginUser;
 export const getUserProfile = api.getUserProfile;
 export const getLiveLocation = api.getLiveLocation;
+export const updateProfile = api.updateProfile;
 
 // 10. Get list of previous passenger bookings/trips with explicit token/passengerId options
 export const getMyBookings = async (token?: string, passengerId?: string) => {

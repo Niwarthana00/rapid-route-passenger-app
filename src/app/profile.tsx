@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,23 +8,62 @@ import {
   Alert,
   Modal,
   Linking,
+  Image,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NotificationsView } from '../components/notifications-view';
 import { useAuth } from '../context/auth-context';
+import { api } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { userProfile, user, logout } = useAuth();
+  const { userProfile, user, logout, setCurrentUserFromStorage } = useAuth();
 
-  const [selectedLanguage, setSelectedLanguage] = useState<'English' | 'සිංහල' | 'தமிழ்'>('English');
-  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
-  const [isSavedRoutesModalOpen, setIsSavedRoutesModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(null);
+
+  // Edit Profile Form States
+  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhotoUrl, setEditPhotoUrl] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'We need photo library permissions to change your profile picture.');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.2,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const base64Data = result.assets[0].base64;
+        const base64Image = `data:image/jpeg;base64,${base64Data}`;
+        setEditPhotoUrl(base64Image);
+      }
+    } catch (error) {
+      console.warn('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image from gallery.');
+    }
+  };
 
   const displayName = userProfile?.name || user?.displayName || 'John Doe';
   const displayPhone = userProfile?.phone || user?.email || '+94 77 123 4567';
@@ -95,7 +134,11 @@ export default function ProfileScreen() {
         {/* User Card matching screenshot */}
         <View style={styles.userSection}>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{initials}</Text>
+            {userProfile?.photoURL ? (
+              <Image source={{ uri: userProfile.photoURL }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
           </View>
 
           <View style={styles.userInfoCol}>
@@ -106,7 +149,30 @@ export default function ProfileScreen() {
 
         {/* Menu Settings Card */}
         <View style={styles.menuCard}>
-          {/* Row 1: My Bookings */}
+          {/* Row 1: Edit Profile */}
+          <Pressable
+            style={styles.menuRow}
+            onPress={() => {
+              setEditName(displayName);
+              setEditPhone(displayPhone);
+              setEditEmail(userProfile?.email || '');
+              setEditPhotoUrl(userProfile?.photoURL || '');
+              setSaveError('');
+              setIsEditProfileModalOpen(true);
+            }}
+          >
+            <View style={styles.menuLeft}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="person-outline" size={20} color="#111827" />
+              </View>
+              <Text style={styles.menuLabel}>Edit Profile</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+          </Pressable>
+
+          <View style={styles.rowDivider} />
+
+          {/* Row 2: My Bookings */}
           <Pressable
             style={styles.menuRow}
             onPress={() => router.push('/bookings')}
@@ -116,22 +182,6 @@ export default function ProfileScreen() {
                 <Ionicons name="ticket-outline" size={20} color="#111827" />
               </View>
               <Text style={styles.menuLabel}>My Bookings</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-          </Pressable>
-
-          <View style={styles.rowDivider} />
-
-          {/* Row 2: Saved Routes */}
-          <Pressable
-            style={styles.menuRow}
-            onPress={() => setIsSavedRoutesModalOpen(true)}
-          >
-            <View style={styles.menuLeft}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="map-outline" size={20} color="#111827" />
-              </View>
-              <Text style={styles.menuLabel}>Saved Routes</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </Pressable>
@@ -154,26 +204,7 @@ export default function ProfileScreen() {
 
           <View style={styles.rowDivider} />
 
-          {/* Row 4: Language */}
-          <Pressable
-            style={styles.menuRow}
-            onPress={() => setIsLanguageModalOpen(true)}
-          >
-            <View style={styles.menuLeft}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="globe-outline" size={20} color="#111827" />
-              </View>
-              <Text style={styles.menuLabel}>Language</Text>
-            </View>
-            <View style={styles.menuRightVal}>
-              <Text style={styles.langValueText}>{selectedLanguage}</Text>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </View>
-          </Pressable>
-
-          <View style={styles.rowDivider} />
-
-          {/* Row 5: Help & Support */}
+          {/* Row 4: Help & Support */}
           <Pressable
             style={styles.menuRow}
             onPress={() => setIsHelpModalOpen(true)}
@@ -199,88 +230,145 @@ export default function ProfileScreen() {
         </Pressable>
       </ScrollView>
 
-      {/* Language Picker Modal */}
+      {/* Edit Profile Modal */}
       <Modal
-        visible={isLanguageModalOpen}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsLanguageModalOpen(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setIsLanguageModalOpen(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Language</Text>
-
-            {(['English', 'සිංහල', 'தமிழ்'] as const).map((lang) => (
-              <Pressable
-                key={lang}
-                style={[
-                  styles.languageOptionRow,
-                  selectedLanguage === lang && styles.languageOptionRowSelected,
-                ]}
-                onPress={() => {
-                  setSelectedLanguage(lang);
-                  setIsLanguageModalOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.languageOptionText,
-                    selectedLanguage === lang && styles.languageOptionTextSelected,
-                  ]}
-                >
-                  {lang}
-                </Text>
-                {selectedLanguage === lang && (
-                  <Ionicons name="checkmark-circle" size={20} color="#059669" />
-                )}
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Saved Routes Modal */}
-      <Modal
-        visible={isSavedRoutesModalOpen}
+        visible={isEditProfileModalOpen}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setIsSavedRoutesModalOpen(false)}
+        onRequestClose={() => setIsEditProfileModalOpen(false)}
       >
         <View style={styles.sheetOverlay}>
-          <View style={styles.sheetModal}>
+          <View style={[styles.sheetModal, { maxHeight: '90%' }]}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Saved Routes</Text>
-              <Pressable onPress={() => setIsSavedRoutesModalOpen(false)} hitSlop={8}>
+              <Text style={styles.sheetTitle}>Edit Profile</Text>
+              <Pressable onPress={() => setIsEditProfileModalOpen(false)} hitSlop={8} disabled={isSaving}>
                 <Ionicons name="close-circle" size={24} color="#94A3B8" />
               </Pressable>
             </View>
 
-            <View style={styles.savedRoutesList}>
-              <View style={styles.savedRouteItem}>
-                <View style={styles.savedRouteBadge}>
-                  <Text style={styles.savedRouteBadgeText}>1-1</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.savedRouteTitle}>Colombo - Kandy</Text>
-                  <Text style={styles.savedRouteSub}>Frequent morning commute</Text>
-                </View>
-                <Ionicons name="star" size={20} color="#F59E0B" />
+            <ScrollView contentContainerStyle={styles.editFormWrapper} keyboardShouldPersistTaps="handled">
+              {/* Photo Preview / Gallery Selection */}
+              <Text style={styles.inputLabel}>Profile Picture</Text>
+              <View style={styles.avatarSelectionContainer}>
+                <Pressable onPress={pickImage} disabled={isSaving} style={styles.avatarPreviewCircle}>
+                  {editPhotoUrl ? (
+                    <Image source={{ uri: editPhotoUrl }} style={styles.avatarPreviewImage} />
+                  ) : (
+                    <Ionicons name="camera-outline" size={32} color="#64748B" />
+                  )}
+                </Pressable>
+
+                <Pressable
+                  style={styles.galleryBtn}
+                  onPress={pickImage}
+                  disabled={isSaving}
+                >
+                  <Ionicons name="image-outline" size={16} color="#0E90E6" />
+                  <Text style={styles.galleryBtnText}>Choose from Gallery</Text>
+                </Pressable>
               </View>
 
-              <View style={styles.savedRouteItem}>
-                <View style={styles.savedRouteBadge}>
-                  <Text style={styles.savedRouteBadgeText}>138</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.savedRouteTitle}>Kottawa - Pettah</Text>
-                  <Text style={styles.savedRouteSub}>High Level Road</Text>
-                </View>
-                <Ionicons name="star" size={20} color="#F59E0B" />
+              {/* Name Input */}
+              <Text style={styles.inputLabel}>Full Name</Text>
+              <TextInput
+                style={styles.editInput}
+                placeholder="Enter full name"
+                placeholderTextColor="#94A3B8"
+                value={editName}
+                onChangeText={setEditName}
+                editable={!isSaving}
+              />
+
+              {/* Phone Input */}
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <TextInput
+                style={styles.editInput}
+                placeholder="Enter phone number"
+                placeholderTextColor="#94A3B8"
+                value={editPhone}
+                onChangeText={setEditPhone}
+                editable={!isSaving}
+                keyboardType="phone-pad"
+              />
+
+              {/* Email Input (READ-ONLY) */}
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <TextInput
+                style={[styles.editInput, styles.disabledInput]}
+                placeholder="Enter email address"
+                placeholderTextColor="#94A3B8"
+                value={editEmail}
+                editable={false}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
+
+              {/* Action Buttons */}
+              <View style={styles.modalBtnRow}>
+                <Pressable
+                  style={styles.cancelBtn}
+                  onPress={() => setIsEditProfileModalOpen(false)}
+                  disabled={isSaving}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.saveBtn}
+                  onPress={async () => {
+                    if (!editName || !editPhone) {
+                      setSaveError('Name and phone number are required.');
+                      return;
+                    }
+                    setSaveError('');
+                    setIsSaving(true);
+                    try {
+                      const res = await api.updateProfile({
+                        fullName: editName.trim(),
+                        phone: editPhone.trim(),
+                        email: editEmail.trim(),
+                        photoUrl: editPhotoUrl.trim(),
+                      });
+
+                      if (res.success && res.data) {
+                        const existingStr = await AsyncStorage.getItem('userData');
+                        if (existingStr) {
+                          const existing = JSON.parse(existingStr);
+                          existing.user = { ...existing.user, ...res.data.user };
+                          existing.profile = {
+                            ...existing.profile,
+                            ...res.data.profile,
+                            full_name: res.data.profile.fullName || res.data.profile.full_name || existing.profile.full_name
+                          };
+                          await AsyncStorage.setItem('userData', JSON.stringify(existing));
+                        } else {
+                          await AsyncStorage.setItem('userData', JSON.stringify(res.data));
+                        }
+                        await setCurrentUserFromStorage();
+                        Alert.alert('Success', 'Profile updated successfully!');
+                        setIsEditProfileModalOpen(false);
+                      } else {
+                        setSaveError(res.message || 'Failed to update profile. Please try again.');
+                      }
+                    } catch (err: any) {
+                      console.error('[Profile] Edit failed:', err);
+                      setSaveError(err.message || 'Network error. Please try again.');
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Save Changes</Text>
+                  )}
+                </Pressable>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -543,27 +631,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 6,
   },
-  languageOptionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-  },
-  languageOptionRowSelected: {
-    backgroundColor: '#ECFDF5',
-  },
-  languageOptionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  languageOptionTextSelected: {
-    color: '#059669',
-    fontWeight: '800',
-  },
   sheetOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -588,38 +655,111 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#111827',
   },
-  savedRoutesList: {
-    gap: 12,
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 32,
   },
-  savedRouteItem: {
+  editFormWrapper: {
+    paddingVertical: 10,
+    gap: 14,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  editInput: {
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+  avatarSelectionContainer: {
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  avatarPreviewCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: '#065F46',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  galleryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-  },
-  savedRouteBadge: {
-    backgroundColor: '#0E90E6',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginTop: 4,
   },
-  savedRouteBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
+  galleryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0E90E6',
   },
-  savedRouteTitle: {
+  disabledInput: {
+    backgroundColor: '#E5E7EB',
+    color: '#6B7280',
+    borderColor: '#D1D5DB',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  cancelBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#111827',
+    color: '#4B5563',
   },
-  savedRouteSub: {
-    fontSize: 12,
-    color: '#64748B',
+  saveBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#0E90E6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   helpItem: {
     flexDirection: 'row',

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 interface BookingTicketItem {
   id: string;
@@ -31,17 +32,19 @@ interface BookingTicketItem {
 }
 
 export default function BookingsScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<BookingTicketItem | null>(null);
 
   const [bookingsList, setBookingsList] = useState<BookingTicketItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Fetch all bookings from API
-  useEffect(() => {
-    async function loadBookings() {
-      setIsLoading(true);
+  const loadBookings = async () => {
+    setIsLoading(true);
+    try {
       const data = await api.getBookingHistory();
       const formatted: BookingTicketItem[] = data.map((b: any) => ({
         id: b.id || b.bookingId || `RR-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -60,10 +63,50 @@ export default function BookingsScreen() {
         status: b.status || 'upcoming',
       }));
       setBookingsList(formatted);
+    } catch (err) {
+      console.warn('Failed to load bookings:', err);
+    } finally {
       setIsLoading(false);
     }
-    loadBookings();
-  }, []);
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadBookings();
+    }, [])
+  );
+
+  const handleCancelBooking = (bookingId: string) => {
+    Alert.alert(
+      'Cancel Booking',
+      'Are you sure you want to cancel this booking and release your reserved seat?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCancelling(true);
+            try {
+              const res = await api.cancelBooking(bookingId);
+              if (res && res.success) {
+                Alert.alert('Booking Cancelled 🎟️', 'Your booking has been successfully cancelled and seat released.');
+                setSelectedBookingForDetails(null);
+                await loadBookings();
+              } else {
+                Alert.alert('Cancellation Failed', res?.message || 'Could not cancel booking. Please try again.');
+              }
+            } catch (err) {
+              console.warn('[Bookings] Failed to cancel booking:', err);
+              Alert.alert('Error', 'An unexpected error occurred.');
+            } finally {
+              setIsCancelling(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const upcomingBookings = bookingsList.filter(b => b.status === 'upcoming');
   const pastBookings = bookingsList.filter(b => b.status === 'completed' || b.status === 'cancelled');
@@ -428,6 +471,27 @@ export default function BookingsScreen() {
                 </View>
               </View>
 
+              {/* Track Live Action */}
+              {selectedBookingForDetails.status === 'upcoming' && (
+                <Pressable
+                  style={styles.modalTrackBtn}
+                  onPress={() => {
+                    setSelectedBookingForDetails(null);
+                    router.push({
+                      pathname: '/',
+                      params: {
+                        routeNumber: selectedBookingForDetails.routeNumber,
+                        from: selectedBookingForDetails.from,
+                        to: selectedBookingForDetails.to,
+                      },
+                    });
+                  }}
+                >
+                  <Ionicons name="map-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.modalTrackBtnText}>Track Live Bus</Text>
+                </Pressable>
+              )}
+
               {/* Bottom Action: Download PDF Receipt */}
               <Pressable
                 style={styles.modalPdfBtn}
@@ -436,6 +500,24 @@ export default function BookingsScreen() {
                 <Ionicons name="cloud-download-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.modalPdfBtnText}>Download PDF Receipt</Text>
               </Pressable>
+
+              {/* Cancel Booking Action */}
+              {selectedBookingForDetails.status === 'upcoming' && (
+                <Pressable
+                  style={[styles.modalCancelBtn, isCancelling && { opacity: 0.6 }]}
+                  onPress={() => handleCancelBooking(selectedBookingForDetails.id)}
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <>
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                      <Text style={styles.modalCancelBtnText}>Cancel Booking</Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
             </View>
           </View>
         </Modal>
@@ -816,6 +898,43 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   modalPdfBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  modalCancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FEE2E2',
+    marginTop: 10,
+  },
+  modalCancelBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  modalTrackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalTrackBtnText: {
     fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',

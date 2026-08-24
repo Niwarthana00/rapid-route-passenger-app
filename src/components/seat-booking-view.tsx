@@ -146,25 +146,33 @@ export function SeatBookingView({
               seatNumbers: selectedSeatNumbers,
               totalFare,
               busId: bus.id,
-            }).then((bookingResult) => {
-              const newBooking: BookingConfirmedDetails = {
-                bookingId: bookingResult.bookingId,
-                routeNumber: bookingResult.routeNumber,
-                from: bookingResult.from,
-                to: bookingResult.to,
-                busPlate: bookingResult.busPlate,
-                isAC: bookingResult.isAC,
-                seatNumbers: bookingResult.seatNumbers,
-                totalFare: bookingResult.totalFare,
-                date: bookingResult.date,
-                time: bookingResult.time,
-              };
+            })
+              .then((bookingResult) => {
+                const newBooking: BookingConfirmedDetails = {
+                  bookingId: bookingResult.bookingId,
+                  routeNumber: bookingResult.routeNumber,
+                  from: bookingResult.from,
+                  to: bookingResult.to,
+                  busPlate: bookingResult.busPlate,
+                  isAC: bookingResult.isAC,
+                  seatNumbers: bookingResult.seatNumbers,
+                  totalFare: bookingResult.totalFare,
+                  date: bookingResult.date,
+                  time: bookingResult.time,
+                };
 
-              setConfirmedBooking(newBooking);
-              if (onConfirmBooking) {
-                onConfirmBooking(selectedSeatNumbers, totalFare);
-              }
-            });
+                setConfirmedBooking(newBooking);
+                if (onConfirmBooking) {
+                  onConfirmBooking(selectedSeatNumbers, totalFare);
+                }
+              })
+              .catch((err) => {
+                console.warn('[Booking] Failed to book seat:', err);
+                Alert.alert(
+                  'Booking Failed ⚠️',
+                  err?.message || 'Could not complete seat booking. Please check if the seat is already occupied or try again.'
+                );
+              });
           },
         },
       ]

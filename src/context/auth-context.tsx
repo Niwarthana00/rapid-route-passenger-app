@@ -70,6 +70,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadStoredAuth();
   }, []);
 
+  // Synchronize Push Notification token when user logs in or app initializes with a logged-in user
+  useEffect(() => {
+    if (!user) return;
+
+    async function syncPushToken() {
+      try {
+        const { registerForPushNotificationsAsync } = require('../services/notifications');
+        const token = await registerForPushNotificationsAsync();
+        if (token) {
+          console.log('[PUSH] Syncing token with backend:', token);
+          await api.savePushToken(token);
+        }
+      } catch (err) {
+        console.warn('[AuthContext] Failed to sync push token:', err);
+      }
+    }
+
+    const timeout = setTimeout(syncPushToken, 1000);
+    return () => clearTimeout(timeout);
+  }, [user?.id]);
+
   const loginWithEmail = async (email: string, pass: string) => {
     const res = await api.loginUser(email, pass);
     if (res.success && res.data) {

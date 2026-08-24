@@ -150,11 +150,11 @@ export const api = {
         },
         body: JSON.stringify(body),
       });
-      if (res.ok) {
-        const json = await res.json();
-        return json && json.success ? json.data : json;
+      const json = await res.json();
+      if (res.ok && json && json.success) {
+        return json.data;
       }
-      throw new Error(`Server returned ${res.status}`);
+      throw new Error(json?.message || `Server returned ${res.status}`);
     } catch (err) {
       console.error('[API] createBooking failed:', err);
       throw err;
@@ -323,6 +323,78 @@ export const api = {
     });
     return await response.json();
   },
+
+  // 13. Save Push Token
+  async savePushToken(pushToken: string) {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_BASE_URL}/auth/push-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ pushToken }),
+      });
+      return await response.json();
+    } catch (err) {
+      console.warn('[API] savePushToken failed:', err);
+      return null;
+    }
+  },
+
+  // 14. Cancel Booking
+  async cancelBooking(bookingId: string) {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return await response.json();
+    } catch (err) {
+      console.warn('[API] cancelBooking failed:', err);
+      return { success: false, message: 'Network error occurred' };
+    }
+  },
+
+  // 15. Get Notifications List
+  async getNotifications() {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_BASE_URL}/notifications`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return await response.json();
+    } catch (err) {
+      console.warn('[API] getNotifications failed:', err);
+      return { success: false, data: [] };
+    }
+  },
+
+  // 16. Mark All Notifications as Read
+  async markAllNotificationsRead() {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return await response.json();
+    } catch (err) {
+      console.warn('[API] markAllNotificationsRead failed:', err);
+      return { success: false };
+    }
+  },
 };
 
 // Standalone exports for compatibility
@@ -331,6 +403,10 @@ export const loginUser = api.loginUser;
 export const getUserProfile = api.getUserProfile;
 export const getLiveLocation = api.getLiveLocation;
 export const updateProfile = api.updateProfile;
+export const savePushToken = api.savePushToken;
+export const cancelBooking = api.cancelBooking;
+export const getNotifications = api.getNotifications;
+export const markAllNotificationsRead = api.markAllNotificationsRead;
 
 // 10. Get list of previous passenger bookings/trips with explicit token/passengerId options
 export const getMyBookings = async (token?: string, passengerId?: string) => {

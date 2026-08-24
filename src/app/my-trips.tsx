@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { api } from '../services/api';
 import {
   StyleSheet,
@@ -56,19 +57,21 @@ export default function MyTripsScreen() {
   // Live map position tracking state
   const [busPos, setBusPos] = useState({ latitude: 6.9344, longitude: 79.8428 });
 
-  // Fetch active bookings on load
-  useEffect(() => {
-    async function loadActiveBooking() {
-      setIsLoading(true);
-      const data = await api.getBookingHistory();
-      console.log('[MY-TRIPS] All bookings:', data);
-      const upcoming = data.find((b: any) => b.status === 'upcoming');
-      console.log('[MY-TRIPS] Active/upcoming booking:', upcoming);
-      setActiveBooking(upcoming);
-      setIsLoading(false);
-    }
-    loadActiveBooking();
-  }, []);
+  // Fetch active bookings whenever screen is focused (handles tab switching refreshes)
+  useFocusEffect(
+    useCallback(() => {
+      async function loadActiveBooking() {
+        setIsLoading(true);
+        const data = await api.getBookingHistory();
+        console.log('[MY-TRIPS] All bookings:', data);
+        const upcoming = data.find((b: any) => b.status === 'upcoming');
+        console.log('[MY-TRIPS] Active/upcoming booking:', upcoming);
+        setActiveBooking(upcoming);
+        setIsLoading(false);
+      }
+      loadActiveBooking();
+    }, [])
+  );
 
   // Poll live tracking configuration
   const [liveTracking, setLiveTracking] = useState<any>(null);

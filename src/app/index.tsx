@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View, Text, TextInput, Pressable, Platform, ScrollView, ActivityIndicator, Animated, PanResponder, Dimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +10,7 @@ import { NotificationsView } from '../components/notifications-view';
 import { useTabBar } from '../context/tab-bar-context';
 import { useAuth } from '../context/auth-context';
 import { api } from '../services/api';
+import * as Location from 'expo-location';
 
 interface RouteItem {
   id: string;
@@ -126,6 +128,7 @@ const VectorMapBackground = ({ activeBooking, routes }: VectorMapBackgroundProps
 
 export default function HomeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 20);
   const { setTabBarVisible } = useTabBar();
@@ -144,19 +147,86 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeBooking, setActiveBooking] = useState<any>(null);
 
-  // Fetch active bookings on load for map display
-  useEffect(() => {
-    async function loadActiveBooking() {
-      try {
-        const data = await api.getBookingHistory();
-        const upcoming = data.find((b: any) => b.status === 'upcoming');
-        setActiveBooking(upcoming);
-      } catch (err) {
-        console.warn('Failed to load active booking on home screen:', err);
+  // Device Location state management
+  const [hasLocationPermission, setHasLocationPermission] = useState<boolean | null>(null);
+  const [currentLocationName, setCurrentLocationName] = useState('Colombo');
+  const [refreshCount, setRefreshCount] = useState(0);
+
+  const checkLocationPermission = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setHasLocationPermission(true);
+        await updateLocationNameAndFetch();
+      } else {
+        setHasLocationPermission(false);
       }
+    } catch (err) {
+      console.warn('[Location] Failed to check permissions:', err);
+      setHasLocationPermission(false);
     }
-    loadActiveBooking();
+  };
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setHasLocationPermission(true);
+        await updateLocationNameAndFetch();
+      } else {
+        setHasLocationPermission(false);
+      }
+    } catch (err) {
+      console.warn('[Location] Failed to request permissions:', err);
+    }
+  };
+
+  const updateLocationNameAndFetch = async () => {
+    try {
+      let loc = await Location.getLastKnownPositionAsync({});
+      if (!loc) {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
+      console.log('[Location] Retrieved passenger coordinates:', loc.coords);
+      
+      const reverseGeocode = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+
+      if (reverseGeocode && reverseGeocode.length > 0) {
+        const place = reverseGeocode[0];
+        const name = place.city || place.subregion || place.district || place.name || 'Colombo';
+        setCurrentLocationName(name);
+        console.log('[Location] Reverse geocoded city name:', name);
+      }
+    } catch (err) {
+      console.warn('[Location] Failed to geocode or retrieve coordinates:', err);
+    }
+  };
+
+  useEffect(() => {
+    checkLocationPermission();
   }, []);
+
+  // Refresh active bookings and route details dynamically on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      async function loadActiveBooking() {
+        try {
+          const data = await api.getBookingHistory();
+          const upcoming = data.find((b: any) => b.status === 'upcoming');
+          setActiveBooking(upcoming);
+        } catch (err) {
+          console.warn('Failed to load active booking on focus:', err);
+        }
+      }
+      loadActiveBooking();
+      setRefreshCount((prev) => prev + 1);
+    }, [])
+  );
 
   // Draggable Bottom Sheet Configurations
   const screenHeight = Dimensions.get('window').height;
@@ -207,6 +277,19 @@ export default function HomeScreen() {
     to: string;
   } | null>(null);
 
+  // Automatically open route details if navigated with deep params (e.g. from My Bookings)
+  useEffect(() => {
+    if (params.routeNumber && params.from && params.to) {
+      setSelectedRoute({
+        id: params.id as string || undefined,
+        routeNumber: params.routeNumber as string,
+        from: params.from as string,
+        to: params.to as string,
+      });
+      setTabBarVisible(false);
+    }
+  }, [params.routeNumber, params.from, params.to, params.id, setTabBarVisible]);
+
   const [routes, setRoutes] = useState<RouteItem[]>([]);
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
 
@@ -230,7 +313,7 @@ export default function HomeScreen() {
       active = false;
       clearTimeout(delayDebounceFn);
     };
-  }, [searchQuery]);
+  }, [searchQuery, refreshCount]);
 
   // Automatically hide tab bar when searching, viewing route detail or notifications
   useEffect(() => {
@@ -387,7 +470,7 @@ export default function HomeScreen() {
                 <Text style={styles.greetingText}>Good morning,</Text>
                 <View style={styles.locationRow}>
                   <Ionicons name="location" size={16} color="#0E90E6" />
-                  <Text style={styles.locationText}>Colombo</Text>
+                  <Text style={styles.locationText}>{currentLocationName}</Text>
                 </View>
               </View>
               
@@ -450,7 +533,20 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
-              {isLoadingRoutes ? (
+              {hasLocationPermission === false ? (
+                <View style={styles.locationPermissionCard}>
+                  <View style={styles.locationPermissionIconCircle}>
+                    <Ionicons name="location" size={28} color="#0E90E6" />
+                  </View>
+                  <Text style={styles.locationPermissionTitle}>Location Access Required</Text>
+                  <Text style={styles.locationPermissionDesc}>
+                    Turn on device location to search and display active CTB buses near your current coordinates.
+                  </Text>
+                  <Pressable style={styles.locationPermissionBtn} onPress={requestLocationPermission}>
+                    <Text style={styles.locationPermissionBtnText}>Turn on Location</Text>
+                  </Pressable>
+                </View>
+              ) : isLoadingRoutes ? (
                 <ActivityIndicator size="large" color="#0E90E6" style={{ marginVertical: 30 }} />
               ) : routes.length > 0 ? (
                 routes.map((route) => {
@@ -985,5 +1081,54 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 20,
     fontWeight: '600',
+  },
+  locationPermissionCard: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: '#EEF2F6',
+    gap: 12,
+  },
+  locationPermissionIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EBF5FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  locationPermissionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  locationPermissionDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  locationPermissionBtn: {
+    backgroundColor: '#0E90E6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    shadowColor: '#0E90E6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  locationPermissionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });
